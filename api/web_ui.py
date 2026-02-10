@@ -492,7 +492,7 @@ async def admin_dashboard(token: str = None, tab: str = "overview"):
 
 # === User Profile Page ===
 @router.get("/u/{bot_id}", response_class=HTMLResponse)
-async def user_profile_page(bot_id: str, token: str = None):
+async def user_profile_page(bot_id: str, token: str = None, tab: str = "profile"):
     # Get user
     profile = models.get_profile(bot_id)
     if not profile:
@@ -507,17 +507,23 @@ async def user_profile_page(bot_id: str, token: str = None):
 </div>
 </body></html>
 '''
-    
+
     # Get additional data if this is the owner
-    is_owner = token and token.startswith(f"intros_") 
+    is_owner = token and token.startswith(f"intros_")
     visitors = []
     connections = []
     requests = []
     limits = {"profile_views": 0, "profile_views_limit": 10, "connection_requests": 0, "connection_requests_limit": 3}
-    
+
+    # Always get counts for display
+    all_connections = models.get_connections(bot_id)
+    all_visitors = models.get_visitors(bot_id)
+    connection_count = len(all_connections)
+    visitor_count = len(all_visitors)
+
     if is_owner:
-        visitors = models.get_visitors(bot_id)
-        connections = models.get_connections(bot_id)
+        visitors = all_visitors
+        connections = all_connections
         requests = models.get_pending_requests(bot_id)
         limits = models.get_daily_limits(bot_id)
     
@@ -535,12 +541,23 @@ async def user_profile_page(bot_id: str, token: str = None):
     # Build visitors list
     visitors_html = ""
     for v in visitors[:10]:
+        v_bot_id = v.get('visitor_bot_id', '')
+        v_name = v.get('name', v_bot_id)
+        v_interests = v.get('interests', '')
+        visited_at = v.get('visited_at', '')[:10] if v.get('visited_at') else 'recently'
+
+        interests_tags = ''.join([f'<span class="tag">{t.strip()}</span>' for t in v_interests.split(',')[:3]]) if v_interests else ''
+
         visitors_html += f'''
         <div class="connection-card">
-            <div class="connection-avatar">{v.get('visitor_bot_id', '?')[0].upper()}</div>
+            <div class="connection-avatar">{v_name[0].upper() if v_name else '?'}</div>
+            <div style="flex:1;">
+                <strong><a href="/u/{v_bot_id}" style="color:#fff;text-decoration:none;">{v_name}</a></strong>
+                <p style="color:#888;font-size:0.85em;">@{v_bot_id} · Viewed {visited_at}</p>
+                <div style="margin-top:5px;">{interests_tags}</div>
+            </div>
             <div>
-                <strong>{v.get('visitor_bot_id', 'Unknown')}</strong>
-                <p style="color:#888;font-size:0.85em;">Viewed {v.get('visited_at', '')[:10] if v.get('visited_at') else 'recently'}</p>
+                <a href="#" class="btn btn-primary" onclick="alert('Use your bot: connect {v_bot_id}');return false;">Connect</a>
             </div>
         </div>
         '''
@@ -548,13 +565,23 @@ async def user_profile_page(bot_id: str, token: str = None):
     # Build connections list
     connections_html = ""
     for c in connections[:10]:
-        other = c.get('bot1_id') if c.get('bot1_id') != bot_id else c.get('bot2_id')
+        conn_bot_id = c.get('bot_id', '')
+        conn_name = c.get('name', conn_bot_id)
+        conn_interests = c.get('interests', '')
+        conn_telegram = c.get('telegram_handle', '')
+        connected_at = c.get('connected_at', '')[:10] if c.get('connected_at') else ''
+
+        telegram_html = f'<p style="color:#00d9ff;font-size:0.85em;">@{conn_telegram}</p>' if conn_telegram else ''
+        interests_tags = ''.join([f'<span class="tag">{t.strip()}</span>' for t in conn_interests.split(',')[:3]]) if conn_interests else ''
+
         connections_html += f'''
         <div class="connection-card">
-            <div class="connection-avatar">{other[0].upper() if other else '?'}</div>
-            <div>
-                <strong>{other}</strong>
-                <p style="color:#888;font-size:0.85em;">Connected {c.get('created_at', '')[:10] if c.get('created_at') else ''}</p>
+            <div class="connection-avatar">{conn_name[0].upper() if conn_name else '?'}</div>
+            <div style="flex:1;">
+                <strong><a href="/u/{conn_bot_id}" style="color:#fff;text-decoration:none;">{conn_name}</a></strong>
+                <p style="color:#888;font-size:0.85em;">@{conn_bot_id} · Connected {connected_at}</p>
+                {telegram_html}
+                <div style="margin-top:5px;">{interests_tags}</div>
             </div>
         </div>
         '''
@@ -562,22 +589,154 @@ async def user_profile_page(bot_id: str, token: str = None):
     # Build requests list
     requests_html = ""
     for r in requests[:10]:
+        r_bot_id = r.get('from_bot_id', '')
+        r_name = r.get('name', r_bot_id)
+        r_interests = r.get('interests', '')
+        created_at = r.get('created_at', '')[:10] if r.get('created_at') else 'recently'
+
+        interests_tags = ''.join([f'<span class="tag">{t.strip()}</span>' for t in r_interests.split(',')[:3]]) if r_interests else ''
+
         requests_html += f'''
         <div class="connection-card">
-            <div class="connection-avatar">{r.get('from_bot_id', '?')[0].upper()}</div>
+            <div class="connection-avatar">{r_name[0].upper() if r_name else '?'}</div>
             <div style="flex:1;">
-                <strong>{r.get('from_bot_id', 'Unknown')}</strong>
-                <p style="color:#888;font-size:0.85em;">Requested {r.get('created_at', '')[:10] if r.get('created_at') else 'recently'}</p>
+                <strong><a href="/u/{r_bot_id}" style="color:#fff;text-decoration:none;">{r_name}</a></strong>
+                <p style="color:#888;font-size:0.85em;">@{r_bot_id} · Requested {created_at}</p>
+                <div style="margin-top:5px;">{interests_tags}</div>
             </div>
-            <div>
-                <a class="btn btn-primary" href="#">Accept</a>
+            <div style="display:flex;gap:10px;">
+                <a class="btn btn-primary" href="#" onclick="alert('Use your bot: accept {r_bot_id}');return false;">Accept</a>
+                <a class="btn" style="background:#333;color:#888;" href="#" onclick="alert('Use your bot: decline {r_bot_id}');return false;">Decline</a>
             </div>
         </div>
         '''
     
-    owner_section = ""
-    if is_owner:
-        owner_section = f'''
+    # Build tab URLs
+    token_param = f"&token={token}" if token else ""
+    base_url = f"/u/{bot_id}?"
+
+    # Navigation tabs
+    edit_tab_class = "active" if tab == "edit" else ""
+    edit_tab_html = f'<a href="{base_url}tab=edit{token_param}" class="tab {edit_tab_class}">Edit Profile</a>' if is_owner else ''
+
+    tabs_html = f'''
+    <div class="tabs">
+        <a href="{base_url}tab=profile{token_param}" class="tab {'active' if tab == 'profile' else ''}">Profile</a>
+        <a href="{base_url}tab=connections{token_param}" class="tab {'active' if tab == 'connections' else ''}">Connections ({connection_count})</a>
+        <a href="{base_url}tab=visitors{token_param}" class="tab {'active' if tab == 'visitors' else ''}">Viewers ({visitor_count})</a>
+        {edit_tab_html}
+    </div>
+    '''
+
+    # Build content based on active tab
+    tab_content = ""
+
+    if tab == "profile":
+        tab_content = f'''
+        <div class="card">
+            <div class="profile-header">
+                <div class="avatar">{profile.get('name', 'U')[0].upper()}</div>
+                <div>
+                    <h2 style="color:#fff;margin-bottom:5px;">{profile.get('name', 'Unknown')}</h2>
+                    <p style="color:#888;">@{bot_id} · {profile.get('location', 'Location not set')}</p>
+                </div>
+            </div>
+
+            <p style="margin-bottom: 20px;">{profile.get('bio', 'No bio yet')}</p>
+
+            <div style="margin-bottom: 15px;">
+                <p style="color:#888;margin-bottom:8px;">Interests</p>
+                {interests_html if interests_html else '<span class="tag">Not specified</span>'}
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <p style="color:#888;margin-bottom:8px;">Looking For</p>
+                {looking_for_html if looking_for_html else '<span class="tag">Not specified</span>'}
+            </div>
+
+            <div style="display:flex;gap:15px;color:#888;font-size:0.9em;">
+                <span>{connection_count} connections</span>
+                <span>{visitor_count} profile views</span>
+            </div>
+        </div>
+        '''
+
+        # Show pending requests for owner
+        if is_owner and requests:
+            tab_content += f'''
+            <div class="card">
+                <h2>Pending Requests ({len(requests)})</h2>
+                {requests_html if requests_html else '<p class="empty">No pending requests</p>'}
+            </div>
+            '''
+
+    elif tab == "connections":
+        if is_owner:
+            tab_content = f'''
+            <div class="card">
+                <h2>Your Connections ({len(connections)})</h2>
+                {connections_html if connections_html else '<p class="empty">No connections yet. Search for people and send connection requests!</p>'}
+            </div>
+            '''
+        else:
+            tab_content = f'''
+            <div class="card">
+                <h2>Connections ({connection_count})</h2>
+                <p class="empty">Sign in to view connections.<br><br>
+                Add <code>?token=YOUR_API_KEY</code> to the URL to access your dashboard.</p>
+            </div>
+            '''
+
+    elif tab == "visitors":
+        if is_owner:
+            tab_content = f'''
+            <div class="card">
+                <h2>Recent Profile Viewers ({len(visitors)})</h2>
+                {visitors_html if visitors_html else '<p class="empty">No visitors yet. Complete your profile and search for others to get noticed!</p>'}
+            </div>
+            '''
+        else:
+            tab_content = f'''
+            <div class="card">
+                <h2>Profile Viewers ({visitor_count})</h2>
+                <p class="empty">Sign in to view who visited your profile.<br><br>
+                Add <code>?token=YOUR_API_KEY</code> to the URL to access your dashboard.</p>
+            </div>
+            '''
+
+    elif tab == "edit" and is_owner:
+        tab_content = f'''
+        <div class="card">
+            <h2>Edit Profile</h2>
+            <p style="color:#888;margin-bottom:20px;">Use your OpenClaw bot to edit your profile:</p>
+
+            <div style="background:#1a1a2e;padding:20px;border-radius:8px;font-family:monospace;margin-bottom:20px;">
+                <p style="color:#00d9ff;margin-bottom:10px;"># View current profile</p>
+                <p>intros.py profile edit</p>
+                <br>
+                <p style="color:#00d9ff;margin-bottom:10px;"># Update a field</p>
+                <p>intros.py profile edit --field interests --value "AI, music, startups"</p>
+                <br>
+                <p style="color:#00d9ff;margin-bottom:10px;"># Or tell your bot</p>
+                <p>"Update my Intros interests to AI, music, startups"</p>
+            </div>
+
+            <h3 style="color:#00d9ff;margin-bottom:15px;">Current Values</h3>
+            <table>
+                <tr><td style="color:#888;width:150px;">Name</td><td>{profile.get('name', 'Not set')}</td></tr>
+                <tr><td style="color:#888;">Interests</td><td>{profile.get('interests', 'Not set')}</td></tr>
+                <tr><td style="color:#888;">Looking For</td><td>{profile.get('looking_for', 'Not set')}</td></tr>
+                <tr><td style="color:#888;">Location</td><td>{profile.get('location', 'Not set')}</td></tr>
+                <tr><td style="color:#888;">Bio</td><td>{profile.get('bio', 'Not set')}</td></tr>
+                <tr><td style="color:#888;">Telegram</td><td>{profile.get('telegram_handle', 'Not set')}</td></tr>
+            </table>
+        </div>
+        '''
+
+    # Daily limits for owner
+    limits_section = ""
+    if is_owner and tab == "profile":
+        limits_section = f'''
         <div class="card">
             <h2>Daily Limits</h2>
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
@@ -597,23 +756,8 @@ async def user_profile_page(bot_id: str, token: str = None):
                 </div>
             </div>
         </div>
-        
-        <div class="card">
-            <h2>Pending Requests ({len(requests)})</h2>
-            {requests_html if requests_html else '<p class="empty">No pending requests</p>'}
-        </div>
-        
-        <div class="card">
-            <h2>Connections ({len(connections)})</h2>
-            {connections_html if connections_html else '<p class="empty">No connections yet</p>'}
-        </div>
-        
-        <div class="card">
-            <h2>Recent Visitors ({len(visitors)})</h2>
-            {visitors_html if visitors_html else '<p class="empty">No visitors yet</p>'}
-        </div>
         '''
-    
+
     return f'''
 <!DOCTYPE html>
 <html>
@@ -627,32 +771,13 @@ async def user_profile_page(bot_id: str, token: str = None):
         <h1>Intros</h1>
         <div>
             <a href="/">Home</a>
+            <a href="/u/{bot_id}{'?token=' + token if token else ''}" class="active">My Profile</a>
         </div>
     </nav>
     <div class="container">
-        <div class="card">
-            <div class="profile-header">
-                <div class="avatar">{profile.get('name', 'U')[0].upper()}</div>
-                <div>
-                    <h2 style="color:#fff;margin-bottom:5px;">{profile.get('name', 'Unknown')}</h2>
-                    <p style="color:#888;">{profile.get('location', 'Location not set')}</p>
-                </div>
-            </div>
-            
-            <p style="margin-bottom: 20px;">{profile.get('bio', 'No bio yet')}</p>
-            
-            <div style="margin-bottom: 15px;">
-                <p style="color:#888;margin-bottom:8px;">Interests</p>
-                {interests_html if interests_html else '<span class="tag">Not specified</span>'}
-            </div>
-            
-            <div>
-                <p style="color:#888;margin-bottom:8px;">Looking For</p>
-                {looking_for_html if looking_for_html else '<span class="tag">Not specified</span>'}
-            </div>
-        </div>
-        
-        {owner_section}
+        {tabs_html}
+        {tab_content}
+        {limits_section}
     </div>
 </body>
 </html>
