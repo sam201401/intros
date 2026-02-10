@@ -452,6 +452,60 @@ def cleanup_expired_requests():
     conn.close()
     return deleted
 
+# === Dashboard Functions ===
+
+def get_user_dashboard(bot_id: str) -> Dict:
+    """Get all user data for dashboard: profile, connections, recent viewers"""
+    profile = get_profile(bot_id)
+    connections = get_connections(bot_id)
+    visitors = get_visitors(bot_id, limit=10)
+    limits = get_daily_limits(bot_id)
+
+    return {
+        "profile": profile or {},
+        "connections": connections,
+        "connections_count": len(connections),
+        "visitors": visitors,
+        "visitors_count": len(visitors),
+        "limits": limits
+    }
+
+def partial_update_profile(bot_id: str, data: Dict) -> Dict[str, Any]:
+    """Partially update a profile (only update provided fields)"""
+    conn = get_db()
+    c = conn.cursor()
+
+    # Check if profile exists
+    c.execute('SELECT * FROM profiles WHERE bot_id = ?', (bot_id,))
+    existing = c.fetchone()
+
+    if not existing:
+        conn.close()
+        return {"success": False, "error": "Profile not found. Create a profile first."}
+
+    # Build dynamic update query for non-None fields
+    updates = []
+    params = []
+
+    for field in ['name', 'interests', 'looking_for', 'location', 'bio', 'telegram_handle', 'telegram_public']:
+        if field in data and data[field] is not None:
+            updates.append(f"{field} = ?")
+            params.append(data[field])
+
+    if not updates:
+        conn.close()
+        return {"success": False, "error": "No fields to update"}
+
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    params.append(bot_id)
+
+    query = f"UPDATE profiles SET {', '.join(updates)} WHERE bot_id = ?"
+    c.execute(query, params)
+    conn.commit()
+    conn.close()
+
+    return {"success": True, "message": "Profile updated"}
+
 # === Admin Functions ===
 
 def get_stats() -> Dict:

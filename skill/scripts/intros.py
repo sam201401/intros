@@ -42,15 +42,17 @@ def api_call(method, endpoint, data=None, params=None):
     """Make API call"""
     url = f"{API_URL}{endpoint}"
     headers = get_headers() if endpoint not in ['/register', '/health'] else {}
-    
+
     try:
         if method == 'GET':
             resp = requests.get(url, headers=headers, params=params, timeout=30)
         elif method == 'POST':
             resp = requests.post(url, headers=headers, json=data, timeout=30)
+        elif method == 'PATCH':
+            resp = requests.patch(url, headers=headers, json=data, timeout=30)
         elif method == 'DELETE':
             resp = requests.delete(url, headers=headers, timeout=30)
-        
+
         if resp.status_code == 200:
             return resp.json()
         else:
@@ -59,6 +61,111 @@ def api_call(method, endpoint, data=None, params=None):
         return {"error": "Cannot connect to Intros server"}
     except Exception as e:
         return {"error": str(e)}
+
+# === Formatting Helper Functions ===
+
+def relative_time(timestamp_str):
+    """Convert timestamp to relative time like '2h ago', '1d ago'"""
+    from datetime import datetime
+    if not timestamp_str:
+        return "unknown"
+
+    try:
+        # Handle SQLite timestamp format
+        ts = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00').split('+')[0])
+        now = datetime.now()
+        diff = now - ts
+
+        seconds = diff.total_seconds()
+        if seconds < 60:
+            return "just now"
+        elif seconds < 3600:
+            mins = int(seconds / 60)
+            return f"{mins}m ago"
+        elif seconds < 86400:
+            hours = int(seconds / 3600)
+            return f"{hours}h ago"
+        elif seconds < 604800:
+            days = int(seconds / 86400)
+            return f"{days}d ago"
+        else:
+            weeks = int(seconds / 604800)
+            return f"{weeks}w ago"
+    except Exception:
+        return timestamp_str[:10] if timestamp_str else "unknown"
+
+def print_box(title, lines, width=45):
+    """Print content in a nice ASCII box"""
+    output = []
+    output.append("+" + "-" * (width - 2) + "+")
+    # Center the title
+    title_padded = title.center(width - 4)
+    output.append("|" + " " + title_padded + " " + "|")
+    output.append("+" + "-" * (width - 2) + "+")
+    for line in lines:
+        # Truncate if too long
+        if len(line) > width - 4:
+            line = line[:width - 7] + "..."
+        padded = line.ljust(width - 4)
+        output.append("| " + padded + " |")
+    output.append("+" + "-" * (width - 2) + "+")
+    return "\n".join(output)
+
+def format_profile_section(profile):
+    """Format profile data for display"""
+    if not profile or not profile.get('name'):
+        return ["No profile yet. Create one with:", "  profile create --name 'Your Name'"]
+
+    lines = []
+    lines.append(f"Username: @{profile.get('bot_id', 'unknown')}")
+    lines.append(f"Name: {profile.get('name', 'Not set')}")
+    if profile.get('interests'):
+        lines.append(f"Interests: {profile['interests']}")
+    if profile.get('looking_for'):
+        lines.append(f"Looking for: {profile['looking_for']}")
+    if profile.get('location'):
+        lines.append(f"Location: {profile['location']}")
+    if profile.get('bio'):
+        lines.append(f"Bio: {profile['bio']}")
+    if profile.get('telegram_handle'):
+        visibility = "public" if profile.get('telegram_public') else "private"
+        lines.append(f"Telegram: @{profile['telegram_handle']} ({visibility})")
+    return lines
+
+def format_connections_list(connections, show_telegram=True):
+    """Format connections for display"""
+    if not connections:
+        return ["No connections yet."]
+
+    lines = []
+    for conn in connections:
+        name = conn.get('name', conn.get('bot_id', 'Unknown'))
+        bot_id = conn.get('bot_id', '')
+        interests = conn.get('interests', '')
+
+        line = f"* {bot_id} - {name}"
+        if interests:
+            # Truncate interests if too long
+            interests_short = interests[:20] + "..." if len(interests) > 20 else interests
+            line += f" ({interests_short})"
+        lines.append(line)
+
+        if show_telegram and conn.get('telegram_handle'):
+            lines.append(f"  Telegram: @{conn['telegram_handle']}")
+    return lines
+
+def format_visitors_list(visitors):
+    """Format visitors for display with relative timestamps"""
+    if not visitors:
+        return ["No profile visitors yet."]
+
+    lines = []
+    for v in visitors:
+        bot_id = v.get('visitor_bot_id', 'unknown')
+        name = v.get('name', bot_id)
+        visited_at = relative_time(v.get('visited_at'))
+        lines.append(f"* {bot_id} - {name} ({visited_at})")
+    return lines
 
 # === Helper Functions ===
 
@@ -257,6 +364,100 @@ def cmd_profile_me(args):
     result = api_call('GET', '/profile')
     print(json.dumps(result))
 
+def cmd_me(args):
+    """Show full dashboard: profile, connections, visitors"""
+    result = api_call('GET', '/me')
+    if 'error' in result:
+        print(json.dumps(result))
+        return
+
+    profile = result.get('profile', {})
+    connections = result.get('connections', [])
+    visitors = result.get('visitors', [])
+
+    output = []
+
+    # Profile section
+    profile_lines = format_profile_section(profile)
+    output.append(print_box("MY INTROS PROFILE", profile_lines))
+
+    # Connections section
+    conn_title = f"CONNECTIONS ({len(connections)})"
+    conn_lines = format_connections_list(connections, show_telegram=True)
+    output.append(print_box(conn_title, conn_lines))
+
+    # Visitors section
+    visitors_title = f"RECENT VIEWERS ({len(visitors)})"
+    visitors_lines = format_visitors_list(visitors)
+    output.append(print_box(visitors_title, visitors_lines))
+
+    # Help hints
+    output.append("")
+    output.append("Commands:")
+    output.append("  profile edit          - Edit your profile")
+    output.append("  connect <username>    - Connect with a viewer")
+    output.append("  search --interests X  - Find new people")
+
+    print("\n".join(output))
+
+def cmd_profile_edit(args):
+    """Interactive profile edit mode"""
+    # First fetch current profile
+    result = api_call('GET', '/profile')
+    if 'error' in result:
+        print(json.dumps(result))
+        return
+
+    if not result.get('name'):
+        print("No profile found. Create one first with:")
+        print("  profile create --name 'Your Name' --interests 'your, interests'")
+        return
+
+    current = result
+    print("\nCurrent profile:")
+    print(f"  1. Name: {current.get('name', 'Not set')}")
+    print(f"  2. Interests: {current.get('interests', 'Not set')}")
+    print(f"  3. Looking for: {current.get('looking_for', 'Not set')}")
+    print(f"  4. Location: {current.get('location', 'Not set')}")
+    print(f"  5. Bio: {current.get('bio', 'Not set')}")
+    print(f"  6. Telegram: {current.get('telegram_handle', 'Not set')}")
+    print("")
+
+    # Check if --field and --value were provided
+    if hasattr(args, 'field') and args.field and hasattr(args, 'value') and args.value:
+        field_map = {
+            '1': 'name', 'name': 'name',
+            '2': 'interests', 'interests': 'interests',
+            '3': 'looking_for', 'looking_for': 'looking_for', 'lookingfor': 'looking_for',
+            '4': 'location', 'location': 'location',
+            '5': 'bio', 'bio': 'bio',
+            '6': 'telegram_handle', 'telegram': 'telegram_handle', 'telegram_handle': 'telegram_handle'
+        }
+
+        field_key = field_map.get(args.field.lower())
+        if not field_key:
+            print(f"Unknown field: {args.field}")
+            print("Valid fields: name, interests, looking_for, location, bio, telegram")
+            return
+
+        # Send PATCH request
+        update_data = {field_key: args.value}
+        result = api_call('PATCH', '/profile', update_data)
+        if result.get('success'):
+            print(f"Updated {field_key} to: {args.value}")
+        else:
+            print(json.dumps(result))
+        return
+
+    # No field/value provided - show instructions for bot-friendly editing
+    print("To update a field, use:")
+    print("  profile edit --field <field> --value 'new value'")
+    print("")
+    print("Example:")
+    print("  profile edit --field interests --value 'AI, music, startups'")
+    print("")
+    print("Fields: name, interests, looking_for, location, bio, telegram")
+
 def cmd_profile_view(args):
     """View someone's profile"""
     result = api_call('GET', f'/profile/{args.bot_id}')
@@ -276,9 +477,33 @@ def cmd_search(args):
     print(json.dumps(result))
 
 def cmd_visitors(args):
-    """View visitors"""
+    """View who visited your profile"""
     result = api_call('GET', '/visitors')
-    print(json.dumps(result))
+    if 'error' in result:
+        print(json.dumps(result))
+        return
+
+    visitors = result.get('visitors', [])
+    if not visitors:
+        print("No profile visitors yet.")
+        print("Tip: Complete your profile and search for others to get noticed!")
+        return
+
+    print(f"\nProfile Viewers ({len(visitors)}):")
+    print("-" * 40)
+    for v in visitors:
+        bot_id = v.get('visitor_bot_id', 'unknown')
+        name = v.get('name', bot_id)
+        visited_at = relative_time(v.get('visited_at'))
+        interests = v.get('interests', '')
+
+        print(f"  {bot_id} - {name}")
+        if interests:
+            print(f"    Interests: {interests}")
+        print(f"    Viewed: {visited_at}")
+        print("")
+
+    print("To connect: connect <username>")
 
 def cmd_connect(args):
     """Send connection request"""
@@ -316,7 +541,34 @@ def cmd_decline(args):
 def cmd_connections(args):
     """View all connections"""
     result = api_call('GET', '/connections')
-    print(json.dumps(result))
+    if 'error' in result:
+        print(json.dumps(result))
+        return
+
+    connections = result.get('connections', [])
+    if not connections:
+        print("No connections yet.")
+        print("Tip: Search for people and send connection requests!")
+        return
+
+    print(f"\nYour Connections ({len(connections)}):")
+    print("-" * 40)
+    for conn in connections:
+        bot_id = conn.get('bot_id', 'unknown')
+        name = conn.get('name', bot_id)
+        interests = conn.get('interests', '')
+        telegram = conn.get('telegram_handle', '')
+        connected_at = relative_time(conn.get('connected_at'))
+
+        print(f"  {bot_id} - {name}")
+        if interests:
+            print(f"    Interests: {interests}")
+        if telegram:
+            print(f"    Telegram: @{telegram}")
+        print(f"    Connected: {connected_at}")
+        print("")
+
+    print("To message: message send <username> 'your message'")
 
 def cmd_limits(args):
     """Check daily limits"""
@@ -540,9 +792,13 @@ def main():
     create_parser.add_argument('--telegram-public', action='store_true', help='Make Telegram public')
     
     profile_sub.add_parser('me', help='View my profile')
-    
+
     view_parser = profile_sub.add_parser('view', help='View a profile')
     view_parser.add_argument('bot_id', help='Bot ID to view')
+
+    edit_parser = profile_sub.add_parser('edit', help='Edit your profile')
+    edit_parser.add_argument('--field', help='Field to edit (name, interests, looking_for, location, bio, telegram)')
+    edit_parser.add_argument('--value', help='New value for the field')
     
     # Search
     search_parser = subparsers.add_parser('search', help='Search profiles')
@@ -550,6 +806,9 @@ def main():
     search_parser.add_argument('--looking-for', help='Search by looking for')
     search_parser.add_argument('--location', help='Search by location')
     
+    # Me (dashboard)
+    subparsers.add_parser('me', help='Show your dashboard (profile, connections, viewers)')
+
     # Visitors
     subparsers.add_parser('visitors', help='See who viewed your profile')
     
@@ -609,8 +868,12 @@ def main():
             cmd_profile_me(args)
         elif args.profile_cmd == 'view':
             cmd_profile_view(args)
+        elif args.profile_cmd == 'edit':
+            cmd_profile_edit(args)
         else:
             parser.print_help()
+    elif args.command == 'me':
+        cmd_me(args)
     elif args.command == 'search':
         cmd_search(args)
     elif args.command == 'visitors':

@@ -111,6 +111,29 @@ async def get_my_profile(user: dict = Depends(get_verified_user)):
     profile = models.get_profile(user["bot_id"])
     return profile or {}
 
+class ProfilePatchRequest(BaseModel):
+    name: Optional[str] = None
+    interests: Optional[str] = None
+    looking_for: Optional[str] = None
+    location: Optional[str] = None
+    bio: Optional[str] = None
+    telegram_handle: Optional[str] = None
+    telegram_public: Optional[bool] = None
+
+@app.patch("/profile")
+async def patch_profile(req: ProfilePatchRequest, user: dict = Depends(get_verified_user)):
+    """Partially update profile (only updates provided fields)"""
+    data = {k: v for k, v in req.dict().items() if v is not None}
+    result = models.partial_update_profile(user["bot_id"], data)
+    if result["success"]:
+        return result
+    raise HTTPException(status_code=400, detail=result.get("error", "Update failed"))
+
+@app.get("/me")
+async def get_dashboard(user: dict = Depends(get_verified_user)):
+    """Get user dashboard: profile, connections, and recent visitors"""
+    return models.get_user_dashboard(user["bot_id"])
+
 # === Search Endpoint ===
 
 @app.post("/search")
