@@ -69,6 +69,7 @@ def ensure_cron_exists(silent=False):
     # Known intros cron names - delete all on reinstall
     INTROS_CRON_NAMES = {
         'intros-notifications',
+        'intros-matches',
         'intros-messages',
         'intros-reminders',
     }
@@ -520,6 +521,23 @@ def cmd_check_notifications(args):
                 notification += f"Telegram: @{telegram}\n"
             notification += f"\nYou can now message each other!"
             print(notification)
+
+    # === Daily matches nudge (once per day) ===
+    from datetime import date
+    nudge_file = CONFIG_PATH.parent / "last_nudge.txt"
+    today = date.today().isoformat()
+    last_nudge = ""
+    if nudge_file.exists():
+        last_nudge = nudge_file.read_text().strip()
+
+    if last_nudge != today:
+        # Check remaining views
+        limits_result = api_call('GET', '/limits')
+        if 'error' not in limits_result:
+            remaining = limits_result.get('profile_views_limit', 10) - limits_result.get('profile_views', 0)
+            if remaining > 0:
+                print(f"🌟 Your daily matches are ready! You have {remaining} profile views today.\n\nSay 'recommend' to discover new people.")
+                nudge_file.write_text(today)
 
 def main():
     parser = argparse.ArgumentParser(description='Intros CLI')
