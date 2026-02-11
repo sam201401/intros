@@ -464,6 +464,21 @@ def cmd_check_notifications(args):
         else:
             return  # Not registered, skip silently
 
+    # === Cleanup old cron sessions ===
+    # Each isolated cron run creates a session file. Delete files older than
+    # 30 minutes to avoid pileup, while preserving active conversations
+    # and the current run's session.
+    import time
+    sessions_dir = Path(STATE_DIR) / "agents" / "main" / "sessions"
+    if sessions_dir.exists():
+        cutoff = time.time() - 1800  # 30 minutes ago
+        for f in sessions_dir.glob("*.jsonl"):
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+            except OSError:
+                pass
+
     # === Self-healing cron schedule ===
     # After skill reinstall, old cron keeps its old schedule.
     # OpenClaw has no post-install hook, so we fix it here.
@@ -591,17 +606,6 @@ def cmd_check_notifications(args):
                 notification += f"Telegram: @{telegram}\n"
             notification += f"\nYou can now message each other!"
             print(notification)
-
-    # === Cleanup previous cron sessions ===
-    # Each cron run creates an isolated session file. Clean up old ones
-    # at the start of the next run (previous run is definitely finished by now).
-    sessions_dir = Path(STATE_DIR) / "agents" / "main" / "sessions"
-    if sessions_dir.exists():
-        for f in sessions_dir.glob("*.jsonl"):
-            try:
-                f.unlink()
-            except OSError:
-                pass
 
     # === Daily matches nudge (once per day) ===
     from datetime import date

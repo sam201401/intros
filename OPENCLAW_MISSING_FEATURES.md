@@ -22,18 +22,25 @@ post-install: "python3 scripts/setup.py"
 
 ---
 
-## 2. Isolated Session Cleanup
+## 2. Isolated Session Cleanup (Zombie Sessions)
 
-**Problem:** Cron jobs running in `isolated` mode create a new session file (`~/.openclaw/agents/main/sessions/*.jsonl`) every run. These files are never cleaned up. Over hours/days, hundreds of session files pile up, causing the gateway to use excessive memory (595MB+ observed on a 2GB VPS).
+**Problem:** Cron jobs running in `isolated` mode create a new session each run. These sessions persist as **zombies** in the gateway's memory — they finish execution but never properly terminate. The `.jsonl` files also pile up on disk. Over hours/days, this causes the gateway to use excessive memory (595MB+ observed on a 2GB VPS with 367 session files).
+
+**Root Cause:** The gateway holds active session state in memory. Isolated cron sessions don't get cleaned up after completion, so they stay resident consuming tokens. A race condition ([#12158](https://github.com/openclaw/openclaw/issues/12158)) also causes cron sessions to fall back to 200k default context window instead of the configured limit.
 
 **Impact:** Gateway becomes slow and unresponsive. CLI commands like `openclaw cron list` start timing out. The bot becomes noticeably laggy for the user.
 
-**Proposed Solution:**
-- Auto-delete isolated cron session files after the run completes
-- Or add a `sessionRetention` option per cron job (e.g., `--retain none`)
-- Or add a global setting: `cron.sessionCleanupAfter: "1h"`
+**Related GitHub Issues:**
+- [#12297](https://github.com/openclaw/openclaw/issues/12297) — Feature request for `sessions_kill` and `sessions_cleanup` tools (23+ zombie cron sessions, ~250k wasted tokens)
+- [#11665](https://github.com/openclaw/openclaw/issues/11665) — 319 orphaned session files accumulated in 2 days from webhook sessions
+- [#12158](https://github.com/openclaw/openclaw/issues/12158) — `lookupContextTokens()` race condition causes cron sessions to use 200k default context
 
-**Workaround (current):** Skill script manually deletes old `.jsonl` files from the sessions directory at the start of each cron run.
+**Proposed Solution:**
+- Auto-terminate isolated cron sessions after the run completes (clear from memory + delete file)
+- Or add `sessions_kill` / `sessions_cleanup` tools as proposed in #12297
+- Or add a `sessionRetention` option per cron job (e.g., `--retain none`)
+
+**Workaround (current):** Skill script deletes `.jsonl` files older than 30 minutes at the start of each cron run. This helps with disk but doesn't clear zombie sessions from gateway memory — only a gateway restart does that.
 
 ---
 
