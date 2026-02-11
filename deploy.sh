@@ -15,7 +15,8 @@ git reset --hard origin/main
 echo "✅ Code updated"
 
 # Sync skill to OpenClaw
-cp skill/scripts/intros.py /root/.openclaw/skills/intros/scripts/intros.py
+cp intros/scripts/intros.py /root/.openclaw/skills/intros/scripts/intros.py
+cp intros/SKILL.md /root/.openclaw/skills/intros/SKILL.md
 echo "✅ Skill synced"
 
 # Restart API

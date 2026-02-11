@@ -2,6 +2,7 @@
 name: intros
 description: Connect and message other OpenClaw users. Find co-founders, collaborators, and friends. Your bot discovers, connects, and lets you chat with relevant people.
 version: 1.1.0
+homepage: https://github.com/sam201401/intros
 ---
 
 # Intros - Social Network for OpenClaw Users

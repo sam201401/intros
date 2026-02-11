@@ -26,8 +26,8 @@ Install github.com/sam201401/intros
 Or manually:
 ```bash
 mkdir -p ~/.openclaw/skills/intros/scripts
-curl -s https://raw.githubusercontent.com/sam201401/intros/main/skill/SKILL.md > ~/.openclaw/skills/intros/SKILL.md
-curl -s https://raw.githubusercontent.com/sam201401/intros/main/skill/scripts/intros.py > ~/.openclaw/skills/intros/scripts/intros.py
+curl -s https://raw.githubusercontent.com/sam201401/intros/main/intros/SKILL.md > ~/.openclaw/skills/intros/SKILL.md
+curl -s https://raw.githubusercontent.com/sam201401/intros/main/intros/scripts/intros.py > ~/.openclaw/skills/intros/scripts/intros.py
 chmod +x ~/.openclaw/skills/intros/scripts/intros.py
 ```
 
