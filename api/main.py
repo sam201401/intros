@@ -123,6 +123,10 @@ async def get_my_profile(user: dict = Depends(get_verified_user)):
 @app.post("/search")
 async def search_profiles(req: SearchRequest, user: dict = Depends(get_verified_user)):
     """Search for profiles by free-text query or filters"""
+    remaining = models.remaining_profile_views(user["bot_id"])
+    if remaining <= 0:
+        raise HTTPException(status_code=429, detail="Daily profile view limit reached (10/day)")
+
     limit = max(1, min(req.limit or 10, 50))
     offset = max(0, req.offset or 0)
 
@@ -139,6 +143,13 @@ async def search_profiles(req: SearchRequest, user: dict = Depends(get_verified_
     # Filter out own profile
     result["results"] = [p for p in result["results"] if p["bot_id"] != user["bot_id"]]
 
+    # Cap by remaining daily views
+    result["results"] = result["results"][:remaining]
+
+    # Record views for all returned profiles
+    viewed_ids = [p["bot_id"] for p in result["results"]]
+    models.record_profile_views(user["bot_id"], viewed_ids)
+
     limits = models.get_daily_limits(user["bot_id"])
     return {
         "results": result["results"],
@@ -154,10 +165,22 @@ async def search_profiles(req: SearchRequest, user: dict = Depends(get_verified_
 async def recommend_profiles(user: dict = Depends(get_verified_user),
                              limit: int = 10, offset: int = 0):
     """Get profile recommendations based on your profile"""
+    remaining = models.remaining_profile_views(user["bot_id"])
+    if remaining <= 0:
+        raise HTTPException(status_code=429, detail="Daily profile view limit reached (10/day)")
+
     limit = max(1, min(limit, 50))
     offset = max(0, offset)
 
     result = models.get_recommendations(user["bot_id"], limit, offset)
+
+    # Cap by remaining daily views
+    result["results"] = result["results"][:remaining]
+
+    # Record views for all returned profiles
+    viewed_ids = [p["bot_id"] for p in result["results"]]
+    models.record_profile_views(user["bot_id"], viewed_ids)
+
     limits = models.get_daily_limits(user["bot_id"])
     return {
         "results": result["results"],

@@ -472,6 +472,35 @@ def get_recommendations(bot_id: str, limit: int = 10, offset: int = 0) -> Dict[s
 
     return {"results": _clean_results(rows, bot_id, seen_ids), "total": total}
 
+def record_profile_views(viewer_bot_id: str, viewed_bot_ids: List[str]):
+    """Record profile views for multiple profiles at once (search/recommend results)"""
+    if not viewed_bot_ids or not viewer_bot_id:
+        return
+    conn = get_db()
+    c = conn.cursor()
+    today = datetime.now().strftime('%Y-%m-%d')
+    for bot_id in viewed_bot_ids:
+        if bot_id == viewer_bot_id:
+            continue
+        # Record visit
+        c.execute('INSERT INTO visitors (visitor_bot_id, visited_bot_id) VALUES (?, ?)',
+                  (viewer_bot_id, bot_id))
+    # Increment daily limit by total views
+    count = len([b for b in viewed_bot_ids if b != viewer_bot_id])
+    if count > 0:
+        c.execute('''
+            INSERT INTO daily_limits (bot_id, date, profile_views)
+            VALUES (?, ?, ?)
+            ON CONFLICT(bot_id, date) DO UPDATE SET profile_views = profile_views + ?
+        ''', (viewer_bot_id, today, count, count))
+    conn.commit()
+    conn.close()
+
+def remaining_profile_views(bot_id: str) -> int:
+    """How many profile views the user has left today"""
+    limits = get_daily_limits(bot_id)
+    return max(0, limits['profile_views_limit'] - limits['profile_views'])
+
 # === Visitor Functions ===
 
 def get_visitors(bot_id: str, limit: int = 20) -> List[Dict]:
