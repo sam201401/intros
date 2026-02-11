@@ -14,10 +14,19 @@ API_URL = "https://api.openbreeze.ai"
 # Use OPENCLAW_STATE_DIR to support multiple OpenClaw instances
 # Each instance gets its own config file
 STATE_DIR = os.environ.get('OPENCLAW_STATE_DIR', str(Path.home() / ".openclaw"))
-CONFIG_PATH = Path(STATE_DIR) / "skills" / "intros" / "config.json"
+# Store config outside skill folder so reinstalls don't wipe it
+DATA_DIR = Path(STATE_DIR) / "data" / "intros"
+CONFIG_PATH = DATA_DIR / "config.json"
+# Legacy path (inside skill folder) — migrate if found
+_LEGACY_CONFIG = Path(STATE_DIR) / "skills" / "intros" / "config.json"
 
 def load_config():
     """Load saved configuration"""
+    # Migrate from legacy path (inside skill folder) to data dir
+    if not CONFIG_PATH.exists() and _LEGACY_CONFIG.exists():
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.move(str(_LEGACY_CONFIG), str(CONFIG_PATH))
     if CONFIG_PATH.exists():
         with open(CONFIG_PATH) as f:
             return json.load(f)
@@ -25,7 +34,7 @@ def load_config():
 
 def save_config(config):
     """Save configuration"""
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_PATH, 'w') as f:
         json.dump(config, f, indent=2)
 
@@ -121,7 +130,7 @@ def ensure_cron_exists(silent=False):
 
         if result.returncode == 0:
             # Save schedule so self-healing cron check knows what's current
-            schedule_file = CONFIG_PATH.parent / "cron_schedule.txt"
+            schedule_file = DATA_DIR / "cron_schedule.txt"
             schedule_file.write_text(cron_schedule)
             if not silent:
                 job_data = json.loads(result.stdout) if result.stdout.strip() else {}
@@ -415,7 +424,7 @@ def cmd_check_notifications(args):
     # After skill reinstall, old cron keeps its old schedule.
     # OpenClaw has no post-install hook, so we fix it here.
     expected_schedule = '* * * * *' if os.environ.get('INTROS_DEV') else '*/10 * * * *'
-    schedule_file = CONFIG_PATH.parent / "cron_schedule.txt"
+    schedule_file = DATA_DIR / "cron_schedule.txt"
     saved_schedule = ""
     if schedule_file.exists():
         saved_schedule = schedule_file.read_text().strip()
@@ -429,7 +438,7 @@ def cmd_check_notifications(args):
         messages = msg_result.get('messages', [])
 
         # Load previously seen message IDs
-        seen_msg_file = CONFIG_PATH.parent / "seen_messages.json"
+        seen_msg_file = DATA_DIR / "seen_messages.json"
         seen_msg_ids = set()
         if seen_msg_file.exists():
             with open(seen_msg_file) as f:
@@ -466,7 +475,7 @@ def cmd_check_notifications(args):
         requests_list = result.get('requests', [])
 
         # Load previously seen request IDs
-        seen_file = CONFIG_PATH.parent / "seen_requests.json"
+        seen_file = DATA_DIR / "seen_requests.json"
         seen_ids = set()
         if seen_file.exists():
             with open(seen_file) as f:
@@ -507,7 +516,7 @@ def cmd_check_notifications(args):
         accepted_list = accepted_result.get('connections', [])
 
         # Load previously seen accepted IDs
-        seen_accepted_file = CONFIG_PATH.parent / "seen_accepted.json"
+        seen_accepted_file = DATA_DIR / "seen_accepted.json"
         seen_accepted_ids = set()
         if seen_accepted_file.exists():
             with open(seen_accepted_file) as f:
@@ -552,7 +561,7 @@ def cmd_check_notifications(args):
 
     # === Daily matches nudge (once per day) ===
     from datetime import date
-    nudge_file = CONFIG_PATH.parent / "last_nudge.txt"
+    nudge_file = DATA_DIR / "last_nudge.txt"
     today = date.today().isoformat()
     last_nudge = ""
     if nudge_file.exists():
