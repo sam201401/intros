@@ -306,62 +306,112 @@ def _sanitize_fts_query(text: str) -> str:
             safe.append(cleaned)
     return ' OR '.join(safe) if safe else ''
 
-def _hide_telegram(rows) -> List[Dict]:
-    """Hide private telegram handles from profile rows"""
+def _clean_results(rows, viewer_bot_id: str = None, seen_bot_ids: set = None) -> List[Dict]:
+    """Clean profile rows: hide telegram, add seen flag, remove rank"""
     results = []
     for row in rows:
         profile = dict(row)
         profile.pop('rank', None)
+        profile.pop('seen_flag', None)
         if not profile.get('telegram_public'):
             profile['telegram_handle'] = None
+        if seen_bot_ids is not None:
+            profile['seen'] = profile['bot_id'] in seen_bot_ids
         results.append(profile)
     return results
 
-def _browse_profiles(limit: int = 10, offset: int = 0) -> Dict[str, Any]:
-    """Browse all profiles, newest first"""
+def _get_seen_bot_ids(viewer_bot_id: str) -> set:
+    """Get set of bot_ids the viewer has already visited"""
+    if not viewer_bot_id:
+        return set()
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT DISTINCT visited_bot_id FROM visitors WHERE visitor_bot_id = ?',
+              (viewer_bot_id,))
+    ids = {row[0] for row in c.fetchall()}
+    conn.close()
+    return ids
+
+def _browse_profiles(limit: int = 10, offset: int = 0,
+                     viewer_bot_id: str = None) -> Dict[str, Any]:
+    """Browse all profiles, unseen first then newest"""
+    seen_ids = _get_seen_bot_ids(viewer_bot_id)
     conn = get_db()
     c = conn.cursor()
     c.execute('SELECT COUNT(*) FROM profiles')
     total = c.fetchone()[0]
-    c.execute('SELECT * FROM profiles ORDER BY updated_at DESC LIMIT ? OFFSET ?', (limit, offset))
+    if viewer_bot_id and seen_ids:
+        # Sort unseen first, then by recency
+        placeholders = ','.join('?' for _ in seen_ids)
+        c.execute(f'''
+            SELECT *, CASE WHEN bot_id IN ({placeholders}) THEN 1 ELSE 0 END as seen_flag
+            FROM profiles
+            ORDER BY seen_flag ASC, updated_at DESC
+            LIMIT ? OFFSET ?
+        ''', (*seen_ids, limit, offset))
+    else:
+        c.execute('SELECT * FROM profiles ORDER BY updated_at DESC LIMIT ? OFFSET ?',
+                  (limit, offset))
     rows = c.fetchall()
     conn.close()
-    return {"results": _hide_telegram(rows), "total": total}
+    return {"results": _clean_results(rows, viewer_bot_id, seen_ids), "total": total}
 
-def _fts_search(fts_query: str, limit: int = 10, offset: int = 0) -> Dict[str, Any]:
-    """Run FTS5 search with BM25 ranking"""
+def _fts_search(fts_query: str, limit: int = 10, offset: int = 0,
+                viewer_bot_id: str = None) -> Dict[str, Any]:
+    """Run FTS5 search with BM25 ranking, unseen profiles first"""
+    seen_ids = _get_seen_bot_ids(viewer_bot_id)
     conn = get_db()
     c = conn.cursor()
     c.execute('SELECT COUNT(*) FROM profiles_fts WHERE profiles_fts MATCH ?', (fts_query,))
     total = c.fetchone()[0]
-    c.execute('''
-        SELECT p.*, bm25(profiles_fts) as rank
-        FROM profiles_fts
-        JOIN profiles p ON p.id = profiles_fts.rowid
-        WHERE profiles_fts MATCH ?
-        ORDER BY rank
-        LIMIT ? OFFSET ?
-    ''', (fts_query, limit, offset))
+
+    # No match fallback: show browse results instead of empty
+    if total == 0:
+        conn.close()
+        return _browse_profiles(limit, offset, viewer_bot_id)
+
+    if viewer_bot_id and seen_ids:
+        placeholders = ','.join('?' for _ in seen_ids)
+        c.execute(f'''
+            SELECT p.*,
+                   bm25(profiles_fts) as rank,
+                   CASE WHEN p.bot_id IN ({placeholders}) THEN 1 ELSE 0 END as seen_flag
+            FROM profiles_fts
+            JOIN profiles p ON p.id = profiles_fts.rowid
+            WHERE profiles_fts MATCH ?
+            ORDER BY seen_flag ASC, rank
+            LIMIT ? OFFSET ?
+        ''', (*seen_ids, fts_query, limit, offset))
+    else:
+        c.execute('''
+            SELECT p.*, bm25(profiles_fts) as rank
+            FROM profiles_fts
+            JOIN profiles p ON p.id = profiles_fts.rowid
+            WHERE profiles_fts MATCH ?
+            ORDER BY rank
+            LIMIT ? OFFSET ?
+        ''', (fts_query, limit, offset))
     rows = c.fetchall()
     conn.close()
-    return {"results": _hide_telegram(rows), "total": total}
+    return {"results": _clean_results(rows, viewer_bot_id, seen_ids), "total": total}
 
 def search_profiles(query: str = None, interests: str = None, looking_for: str = None,
-                    location: str = None, limit: int = 10, offset: int = 0) -> Dict[str, Any]:
-    """Search profiles using FTS5 or browse all"""
+                    location: str = None, limit: int = 10, offset: int = 0,
+                    viewer_bot_id: str = None) -> Dict[str, Any]:
+    """Search profiles using FTS5 or browse all. Unseen profiles ranked first."""
     if query:
         fts_query = _sanitize_fts_query(query)
         if fts_query:
-            return _fts_search(fts_query, limit, offset)
+            return _fts_search(fts_query, limit, offset, viewer_bot_id)
     elif interests or looking_for or location:
         parts = ' '.join(filter(None, [interests, looking_for, location]))
         fts_query = _sanitize_fts_query(parts)
         if fts_query:
-            return _fts_search(fts_query, limit, offset)
-    return _browse_profiles(limit, offset)
+            return _fts_search(fts_query, limit, offset, viewer_bot_id)
+    return _browse_profiles(limit, offset, viewer_bot_id)
 
 def get_recommendations(bot_id: str, limit: int = 10, offset: int = 0) -> Dict[str, Any]:
-    """Recommend profiles similar to the user's own profile"""
+    """Recommend profiles similar to the user's own profile. Unseen first."""
     profile = get_profile(bot_id)
     if not profile:
         return {"results": [], "total": 0}
@@ -374,8 +424,9 @@ def get_recommendations(bot_id: str, limit: int = 10, offset: int = 0) -> Dict[s
     ]))
     fts_query = _sanitize_fts_query(parts)
     if not fts_query:
-        return _browse_profiles(limit, offset)
+        return _browse_profiles(limit, offset, bot_id)
 
+    seen_ids = _get_seen_bot_ids(bot_id)
     conn = get_db()
     c = conn.cursor()
 
@@ -387,19 +438,39 @@ def get_recommendations(bot_id: str, limit: int = 10, offset: int = 0) -> Dict[s
     ''', (fts_query, bot_id))
     total = c.fetchone()[0]
 
-    # Get ranked results excluding self
-    c.execute('''
-        SELECT p.*, bm25(profiles_fts) as rank
-        FROM profiles_fts
-        JOIN profiles p ON p.id = profiles_fts.rowid
-        WHERE profiles_fts MATCH ? AND p.bot_id != ?
-        ORDER BY rank
-        LIMIT ? OFFSET ?
-    ''', (fts_query, bot_id, limit, offset))
+    # No match fallback
+    if total == 0:
+        conn.close()
+        result = _browse_profiles(limit, offset, bot_id)
+        result["results"] = [p for p in result["results"] if p["bot_id"] != bot_id]
+        return result
+
+    # Get ranked results excluding self, unseen first
+    if seen_ids:
+        placeholders = ','.join('?' for _ in seen_ids)
+        c.execute(f'''
+            SELECT p.*,
+                   bm25(profiles_fts) as rank,
+                   CASE WHEN p.bot_id IN ({placeholders}) THEN 1 ELSE 0 END as seen_flag
+            FROM profiles_fts
+            JOIN profiles p ON p.id = profiles_fts.rowid
+            WHERE profiles_fts MATCH ? AND p.bot_id != ?
+            ORDER BY seen_flag ASC, rank
+            LIMIT ? OFFSET ?
+        ''', (*seen_ids, fts_query, bot_id, limit, offset))
+    else:
+        c.execute('''
+            SELECT p.*, bm25(profiles_fts) as rank
+            FROM profiles_fts
+            JOIN profiles p ON p.id = profiles_fts.rowid
+            WHERE profiles_fts MATCH ? AND p.bot_id != ?
+            ORDER BY rank
+            LIMIT ? OFFSET ?
+        ''', (fts_query, bot_id, limit, offset))
     rows = c.fetchall()
     conn.close()
 
-    return {"results": _hide_telegram(rows), "total": total}
+    return {"results": _clean_results(rows, bot_id, seen_ids), "total": total}
 
 # === Visitor Functions ===
 

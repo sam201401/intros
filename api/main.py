@@ -132,7 +132,8 @@ async def search_profiles(req: SearchRequest, user: dict = Depends(get_verified_
         looking_for=req.looking_for,
         location=req.location,
         limit=limit,
-        offset=offset
+        offset=offset,
+        viewer_bot_id=user["bot_id"]
     )
 
     # Filter out own profile
