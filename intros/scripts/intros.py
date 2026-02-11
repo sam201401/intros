@@ -524,6 +524,17 @@ def cmd_check_notifications(args):
             notification += f"\nYou can now message each other!"
             print(notification)
 
+    # === Cleanup previous cron sessions ===
+    # Each cron run creates an isolated session file. Clean up old ones
+    # at the start of the next run (previous run is definitely finished by now).
+    sessions_dir = Path(STATE_DIR) / "agents" / "main" / "sessions"
+    if sessions_dir.exists():
+        for f in sessions_dir.glob("*.jsonl"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
     # === Daily matches nudge (once per day) ===
     from datetime import date
     nudge_file = CONFIG_PATH.parent / "last_nudge.txt"
