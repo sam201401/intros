@@ -255,10 +255,10 @@ def cmd_search(args):
     if args.location:
         data['location'] = args.location
 
-    # Pagination
+    # Pagination (3 per page for chat-based UI)
     page = max(1, args.page)
-    data['limit'] = 10
-    data['offset'] = (page - 1) * 10
+    data['limit'] = 3
+    data['offset'] = (page - 1) * 3
 
     result = api_call('POST', '/search', data)
 
@@ -270,7 +270,7 @@ def cmd_search(args):
 def cmd_recommend(args):
     """Get profile recommendations based on your profile"""
     page = max(1, args.page)
-    limit = 10
+    limit = 3
     offset = (page - 1) * limit
 
     result = api_call('GET', '/recommend', params={'limit': limit, 'offset': offset})
