@@ -454,9 +454,9 @@ def cmd_check_notifications(args):
             print(notification)
 
     # === Check for accepted connections ===
-    result = api_call('GET', '/accepted-connections')
-    if 'error' not in result:
-        accepted_list = result.get('accepted', [])
+    accepted_result = api_call('GET', '/accepted-connections')
+    if 'error' not in accepted_result:
+        accepted_list = accepted_result.get('connections', [])
 
         # Load previously seen accepted IDs
         seen_accepted_file = CONFIG_PATH.parent / "seen_accepted.json"
