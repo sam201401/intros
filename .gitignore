@@ -5,4 +5,6 @@ config.json
 .env
 *.log
 CLAUDE.md
+MEMORY.md
+OPENCLAW_DOCS.md
 webhook.py
