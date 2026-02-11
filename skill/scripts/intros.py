@@ -396,10 +396,10 @@ def cmd_check_notifications(args):
             if msg_id not in seen_msg_ids:
                 new_messages.append(msg)
 
-        # Save current IDs as seen
-        if current_msg_ids or seen_msg_ids:
+        # Save current IDs as seen (only current, old ones cleared when read)
+        if current_msg_ids:
             with open(seen_msg_file, 'w') as f:
-                json.dump(list(current_msg_ids | seen_msg_ids), f)
+                json.dump(list(current_msg_ids), f)
 
         # Notify about new messages
         for msg in new_messages:
