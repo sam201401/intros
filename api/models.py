@@ -90,6 +90,26 @@ def init_db():
             FOREIGN KEY (bot_id) REFERENCES users(bot_id)
         )
     ''')
+
+    # Messages table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_bot_id TEXT NOT NULL,
+            to_bot_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            read INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (from_bot_id) REFERENCES users(bot_id),
+            FOREIGN KEY (to_bot_id) REFERENCES users(bot_id)
+        )
+    ''')
+
+    # Add indexes for performance
+    c.execute('CREATE INDEX IF NOT EXISTS idx_messages_to_unread ON messages(to_bot_id, read)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_bot_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_connections_to_status ON connections(to_bot_id, status)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_connections_from_status ON connections(from_bot_id, status)')
     
     conn.commit()
     conn.close()
@@ -397,6 +417,133 @@ def get_connections(bot_id: str) -> List[Dict]:
     
     rows = c.fetchall()
     conn.close()
+    return [dict(row) for row in rows]
+
+# === Messaging Functions ===
+
+def send_message(from_bot_id: str, to_bot_id: str, content: str) -> Dict[str, Any]:
+    """Send a message to a connected user"""
+    # Check if connected
+    if not are_connected(from_bot_id, to_bot_id):
+        return {"success": False, "error": "You must be connected to send messages"}
+
+    # Check content length
+    if len(content) > 500:
+        return {"success": False, "error": "Message too long (max 500 characters)"}
+
+    conn = get_db()
+    c = conn.cursor()
+
+    c.execute('''
+        INSERT INTO messages (from_bot_id, to_bot_id, content)
+        VALUES (?, ?, ?)
+    ''', (from_bot_id, to_bot_id, content))
+
+    message_id = c.lastrowid
+    conn.commit()
+    conn.close()
+
+    return {"success": True, "message_id": message_id}
+
+def get_messages(bot_id: str, other_bot_id: str, limit: int = 50) -> List[Dict]:
+    """Get conversation between two users"""
+    # Check if connected
+    if not are_connected(bot_id, other_bot_id):
+        return []
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # Get messages in both directions
+    c.execute('''
+        SELECT * FROM messages
+        WHERE (from_bot_id = ? AND to_bot_id = ?)
+           OR (from_bot_id = ? AND to_bot_id = ?)
+        ORDER BY created_at DESC
+        LIMIT ?
+    ''', (bot_id, other_bot_id, other_bot_id, bot_id, limit))
+
+    rows = c.fetchall()
+
+    # Mark messages as read
+    c.execute('''
+        UPDATE messages SET read = 1
+        WHERE to_bot_id = ? AND from_bot_id = ? AND read = 0
+    ''', (bot_id, other_bot_id))
+
+    conn.commit()
+    conn.close()
+
+    return [dict(row) for row in rows]
+
+def get_conversations(bot_id: str) -> List[Dict]:
+    """Get list of all conversations with latest message"""
+    conn = get_db()
+    c = conn.cursor()
+
+    # Get unique conversation partners with latest message
+    c.execute('''
+        SELECT
+            CASE
+                WHEN from_bot_id = ? THEN to_bot_id
+                ELSE from_bot_id
+            END as other_bot_id,
+            content as last_message,
+            created_at as last_message_at,
+            CASE WHEN to_bot_id = ? AND read = 0 THEN 1 ELSE 0 END as unread
+        FROM messages
+        WHERE from_bot_id = ? OR to_bot_id = ?
+        ORDER BY created_at DESC
+    ''', (bot_id, bot_id, bot_id, bot_id))
+
+    rows = c.fetchall()
+    conn.close()
+
+    # Deduplicate to get latest per conversation
+    seen = set()
+    conversations = []
+    for row in rows:
+        other_id = row['other_bot_id']
+        if other_id not in seen:
+            seen.add(other_id)
+            conversations.append(dict(row))
+
+    return conversations
+
+def get_unread_messages(bot_id: str) -> List[Dict]:
+    """Get unread messages for notifications"""
+    conn = get_db()
+    c = conn.cursor()
+
+    c.execute('''
+        SELECT m.*, p.name as from_name
+        FROM messages m
+        JOIN profiles p ON m.from_bot_id = p.bot_id
+        WHERE m.to_bot_id = ? AND m.read = 0
+        ORDER BY m.created_at DESC
+    ''', (bot_id,))
+
+    rows = c.fetchall()
+    conn.close()
+
+    return [dict(row) for row in rows]
+
+def get_accepted_connections(bot_id: str) -> List[Dict]:
+    """Get connections that were accepted (for notifying the sender)"""
+    conn = get_db()
+    c = conn.cursor()
+
+    c.execute('''
+        SELECT c.*, p.name, p.interests, p.telegram_handle
+        FROM connections c
+        JOIN profiles p ON c.to_bot_id = p.bot_id
+        WHERE c.from_bot_id = ? AND c.status = 'accepted'
+        ORDER BY c.responded_at DESC
+    ''', (bot_id,))
+
+    rows = c.fetchall()
+    conn.close()
+
     return [dict(row) for row in rows]
 
 # === Limits Functions ===

@@ -62,16 +62,20 @@ def api_call(method, endpoint, data=None, params=None):
 
 # === Helper Functions ===
 
-def ensure_cron_exists(silent=False, force_recreate=False):
-    """Ensure cron job exists with correct script path. Returns True if exists/created, False if failed."""
+def ensure_cron_exists(silent=False):
+    """Ensure cron job exists with correct script path. Always recreates on reinstall. Returns True if created, False if failed."""
     import subprocess
+
+    # Known intros cron names - delete all on reinstall
+    INTROS_CRON_NAMES = {
+        'intros-notifications',
+        'intros-messages',
+        'intros-reminders',
+    }
 
     # Get the actual script path (where this script is running from)
     script_path = Path(__file__).resolve()
-    script_path_str = str(script_path)
 
-    # Check if cron already exists
-    should_create = False
     try:
         result = subprocess.run(
             ['openclaw', 'cron', 'list', '--json'],
@@ -81,48 +85,21 @@ def ensure_cron_exists(silent=False, force_recreate=False):
             data = json.loads(result.stdout)
             jobs = data.get('jobs', []) if isinstance(data, dict) else data
 
-            # Find existing intros-notifications cron
-            found_cron = None
+            # Delete ALL existing intros crons (handles reinstalls, old versions, duplicates)
             for job in jobs:
-                if job.get('name') == 'intros-notifications':
-                    found_cron = job
-                    break
-
-            if found_cron:
-                job_id = found_cron.get('id')
-                cron_has_correct_path = script_path_str in str(found_cron.get('payload', {}).get('message', ''))
-
-                if cron_has_correct_path and not force_recreate:
-                    if not silent:
-                        print(json.dumps({
-                            "success": True,
-                            "message": "Intros notifications already set up!",
-                            "cron_id": job_id
-                        }))
-                    return True
-                else:
-                    # Wrong path - delete and recreate
+                if job.get('name') in INTROS_CRON_NAMES:
+                    job_id = job.get('id')
                     subprocess.run(
                         ['openclaw', 'cron', 'delete', job_id],
                         capture_output=True, text=True, timeout=10
                     )
-                    should_create = True
-            else:
-                # No existing cron found
-                should_create = True
-        else:
-            # Command failed but didn't throw - safe to create
-            should_create = True
     except Exception as e:
-        # If we can't check, DON'T create (prevents duplicates)
+        # If we can't check/delete, DON'T create (prevents duplicates)
         if not silent:
             print(json.dumps({"error": f"Could not check cron status: {e}"}))
         return False
 
-    if not should_create:
-        return True
-
-    # Create cron job with the actual script path
+    # Create fresh cron job with the actual script path
     try:
         result = subprocess.run([
             'openclaw', 'cron', 'add',

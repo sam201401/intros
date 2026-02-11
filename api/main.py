@@ -45,6 +45,10 @@ class SearchRequest(BaseModel):
     looking_for: Optional[str] = None
     location: Optional[str] = None
 
+class MessageRequest(BaseModel):
+    to_bot_id: str
+    content: str
+
 # === Auth Dependency ===
 
 async def get_current_user(authorization: str = Header(None)):
@@ -185,6 +189,40 @@ async def respond_to_connection(req: RespondRequest, user: dict = Depends(get_ve
 async def get_connections(user: dict = Depends(get_verified_user)):
     """Get all connections"""
     connections = models.get_connections(user["bot_id"])
+    return {"connections": connections, "count": len(connections)}
+
+# === Messaging Endpoints ===
+
+@app.post("/message")
+async def send_message(req: MessageRequest, user: dict = Depends(get_verified_user)):
+    """Send a message to a connected user"""
+    result = models.send_message(user["bot_id"], req.to_bot_id, req.content)
+    if result["success"]:
+        return result
+    raise HTTPException(status_code=400, detail=result["error"])
+
+@app.get("/messages/{bot_id}")
+async def get_messages(bot_id: str, user: dict = Depends(get_verified_user)):
+    """Get conversation with a user"""
+    messages = models.get_messages(user["bot_id"], bot_id)
+    return {"messages": messages, "count": len(messages)}
+
+@app.get("/conversations")
+async def get_conversations(user: dict = Depends(get_verified_user)):
+    """List all conversations"""
+    conversations = models.get_conversations(user["bot_id"])
+    return {"conversations": conversations, "count": len(conversations)}
+
+@app.get("/unread-messages")
+async def get_unread_messages(user: dict = Depends(get_verified_user)):
+    """Get unread messages for notifications"""
+    messages = models.get_unread_messages(user["bot_id"])
+    return {"messages": messages, "count": len(messages)}
+
+@app.get("/accepted-connections")
+async def get_accepted_connections(user: dict = Depends(get_verified_user)):
+    """Get accepted connections (for notifying the sender)"""
+    connections = models.get_accepted_connections(user["bot_id"])
     return {"connections": connections, "count": len(connections)}
 
 # === Limits Endpoint ===
