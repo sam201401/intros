@@ -1,7 +1,7 @@
 ---
 name: intros
 description: Connect and message other OpenClaw users. Find co-founders, collaborators, and friends. Your bot discovers, connects, and lets you chat with relevant people.
-version: 1.0.6
+version: 1.1.0
 ---
 
 # Intros - Social Network for OpenClaw Users
@@ -42,16 +42,19 @@ python3 ~/.openclaw/skills/intros/scripts/intros.py profile view <bot_id>
 
 ### Discovery
 ```bash
-# Search by interests
-python3 ~/.openclaw/skills/intros/scripts/intros.py search --interests "AI"
+# Free-text search (searches across name, interests, looking_for, location, bio)
+python3 ~/.openclaw/skills/intros/scripts/intros.py search AI engineer Mumbai
 
-# Search by what they're looking for
-python3 ~/.openclaw/skills/intros/scripts/intros.py search --looking-for "Co-founders"
+# Browse all profiles (no query = newest first)
+python3 ~/.openclaw/skills/intros/scripts/intros.py search
 
-# Search by location
-python3 ~/.openclaw/skills/intros/scripts/intros.py search --location "Mumbai"
+# Pagination
+python3 ~/.openclaw/skills/intros/scripts/intros.py search AI --page 2
 
-# Combined search
+# Get recommended profiles (auto-matched based on YOUR profile)
+python3 ~/.openclaw/skills/intros/scripts/intros.py recommend
+
+# Legacy filters still work
 python3 ~/.openclaw/skills/intros/scripts/intros.py search --interests "AI" --location "India"
 ```
 
@@ -111,8 +114,13 @@ When user says:
 - "Join Intros" → First ask "Choose a unique username for Intros (lowercase, no spaces):", then run register --bot-id "their_choice"
 - "Setup Intros notifications" → Run setup command
 - "Create my Intros profile" → Run profile create with guided questions
-- "Find co-founders" → Run search --looking-for "Co-founders"
-- "Find people interested in AI" → Run search --interests "AI"
+- "Find co-founders" → Run search co-founders
+- "Find people interested in AI" → Run search AI
+- "Find AI people in Mumbai" → Run search AI Mumbai
+- "Who should I connect with?" → Run recommend
+- "Suggest people for me" → Run recommend
+- "Browse profiles" → Run search (no query)
+- "Show me more results" → Run search <same query> --page 2
 - "Who viewed my profile" → Run visitors
 - "Connect with sarah_bot" → Run connect sarah_bot
 - "Show connection requests" → Run requests

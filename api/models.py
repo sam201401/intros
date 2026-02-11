@@ -111,7 +111,41 @@ def init_db():
     c.execute('CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_bot_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_connections_to_status ON connections(to_bot_id, status)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_connections_from_status ON connections(from_bot_id, status)')
-    
+
+    # FTS5 full-text search index for profiles
+    c.execute('''
+        CREATE VIRTUAL TABLE IF NOT EXISTS profiles_fts USING fts5(
+            name, interests, looking_for, location, bio,
+            content=profiles, content_rowid=id
+        )
+    ''')
+
+    # Triggers to keep FTS in sync with profiles table
+    for trigger_sql in [
+        '''CREATE TRIGGER profiles_ai AFTER INSERT ON profiles BEGIN
+            INSERT INTO profiles_fts(rowid, name, interests, looking_for, location, bio)
+            VALUES (new.id, new.name, new.interests, new.looking_for, new.location, new.bio);
+        END''',
+        '''CREATE TRIGGER profiles_ad AFTER DELETE ON profiles BEGIN
+            INSERT INTO profiles_fts(profiles_fts, rowid, name, interests, looking_for, location, bio)
+            VALUES ('delete', old.id, old.name, old.interests, old.looking_for, old.location, old.bio);
+        END''',
+        '''CREATE TRIGGER profiles_au AFTER UPDATE ON profiles BEGIN
+            INSERT INTO profiles_fts(profiles_fts, rowid, name, interests, looking_for, location, bio)
+            VALUES ('delete', old.id, old.name, old.interests, old.looking_for, old.location, old.bio);
+            INSERT INTO profiles_fts(rowid, name, interests, looking_for, location, bio)
+            VALUES (new.id, new.name, new.interests, new.looking_for, new.location, new.bio);
+        END''',
+    ]:
+        try:
+            c.execute(trigger_sql)
+        except sqlite3.OperationalError:
+            pass  # Trigger already exists
+
+    conn.commit()
+
+    # Rebuild FTS index from existing data (idempotent, fast for <1000 rows)
+    c.execute("INSERT INTO profiles_fts(profiles_fts) VALUES('rebuild')")
     conn.commit()
     conn.close()
 
@@ -262,40 +296,110 @@ def get_profile(bot_id: str, viewer_bot_id: str = None) -> Optional[Dict]:
         return profile
     return None
 
-def search_profiles(interests: str = None, looking_for: str = None, location: str = None, limit: int = 10) -> List[Dict]:
-    """Search profiles by criteria"""
-    conn = get_db()
-    c = conn.cursor()
-    
-    query = 'SELECT * FROM profiles WHERE 1=1'
-    params = []
-    
-    if interests:
-        query += ' AND interests LIKE ?'
-        params.append(f'%{interests}%')
-    if looking_for:
-        query += ' AND looking_for LIKE ?'
-        params.append(f'%{looking_for}%')
-    if location:
-        query += ' AND location LIKE ?'
-        params.append(f'%{location}%')
-    
-    query += ' ORDER BY updated_at DESC LIMIT ?'
-    params.append(limit)
-    
-    c.execute(query, params)
-    rows = c.fetchall()
-    conn.close()
-    
-    # Hide private telegram handles
+def _sanitize_fts_query(text: str) -> str:
+    """Build an OR query from text, stripping FTS5 special chars"""
+    terms = text.replace(',', ' ').split()
+    safe = []
+    for t in terms:
+        cleaned = ''.join(ch for ch in t if ch.isalnum() or ch == '_')
+        if cleaned:
+            safe.append(cleaned)
+    return ' OR '.join(safe) if safe else ''
+
+def _hide_telegram(rows) -> List[Dict]:
+    """Hide private telegram handles from profile rows"""
     results = []
     for row in rows:
         profile = dict(row)
+        profile.pop('rank', None)
         if not profile.get('telegram_public'):
             profile['telegram_handle'] = None
         results.append(profile)
-    
     return results
+
+def _browse_profiles(limit: int = 10, offset: int = 0) -> Dict[str, Any]:
+    """Browse all profiles, newest first"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT COUNT(*) FROM profiles')
+    total = c.fetchone()[0]
+    c.execute('SELECT * FROM profiles ORDER BY updated_at DESC LIMIT ? OFFSET ?', (limit, offset))
+    rows = c.fetchall()
+    conn.close()
+    return {"results": _hide_telegram(rows), "total": total}
+
+def _fts_search(fts_query: str, limit: int = 10, offset: int = 0) -> Dict[str, Any]:
+    """Run FTS5 search with BM25 ranking"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT COUNT(*) FROM profiles_fts WHERE profiles_fts MATCH ?', (fts_query,))
+    total = c.fetchone()[0]
+    c.execute('''
+        SELECT p.*, bm25(profiles_fts) as rank
+        FROM profiles_fts
+        JOIN profiles p ON p.id = profiles_fts.rowid
+        WHERE profiles_fts MATCH ?
+        ORDER BY rank
+        LIMIT ? OFFSET ?
+    ''', (fts_query, limit, offset))
+    rows = c.fetchall()
+    conn.close()
+    return {"results": _hide_telegram(rows), "total": total}
+
+def search_profiles(query: str = None, interests: str = None, looking_for: str = None,
+                    location: str = None, limit: int = 10, offset: int = 0) -> Dict[str, Any]:
+    """Search profiles using FTS5 or browse all"""
+    if query:
+        fts_query = _sanitize_fts_query(query)
+        if fts_query:
+            return _fts_search(fts_query, limit, offset)
+    elif interests or looking_for or location:
+        parts = ' '.join(filter(None, [interests, looking_for, location]))
+        fts_query = _sanitize_fts_query(parts)
+        if fts_query:
+            return _fts_search(fts_query, limit, offset)
+    return _browse_profiles(limit, offset)
+
+def get_recommendations(bot_id: str, limit: int = 10, offset: int = 0) -> Dict[str, Any]:
+    """Recommend profiles similar to the user's own profile"""
+    profile = get_profile(bot_id)
+    if not profile:
+        return {"results": [], "total": 0}
+
+    # Build query from user's own profile fields
+    parts = ' '.join(filter(None, [
+        profile.get('interests', ''),
+        profile.get('looking_for', ''),
+        profile.get('location', ''),
+    ]))
+    fts_query = _sanitize_fts_query(parts)
+    if not fts_query:
+        return _browse_profiles(limit, offset)
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # Count total (excluding self)
+    c.execute('''
+        SELECT COUNT(*) FROM profiles_fts
+        JOIN profiles p ON p.id = profiles_fts.rowid
+        WHERE profiles_fts MATCH ? AND p.bot_id != ?
+    ''', (fts_query, bot_id))
+    total = c.fetchone()[0]
+
+    # Get ranked results excluding self
+    c.execute('''
+        SELECT p.*, bm25(profiles_fts) as rank
+        FROM profiles_fts
+        JOIN profiles p ON p.id = profiles_fts.rowid
+        WHERE profiles_fts MATCH ? AND p.bot_id != ?
+        ORDER BY rank
+        LIMIT ? OFFSET ?
+    ''', (fts_query, bot_id, limit, offset))
+    rows = c.fetchall()
+    conn.close()
+
+    return {"results": _hide_telegram(rows), "total": total}
 
 # === Visitor Functions ===
 

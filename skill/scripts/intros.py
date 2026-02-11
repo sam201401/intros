@@ -242,14 +242,44 @@ def cmd_profile_view(args):
 def cmd_search(args):
     """Search profiles"""
     data = {}
+
+    # Free-text query (positional args)
+    if args.query:
+        data['query'] = ' '.join(args.query)
+
+    # Legacy filters (backward compat)
     if args.interests:
         data['interests'] = args.interests
     if args.looking_for:
         data['looking_for'] = args.looking_for
     if args.location:
         data['location'] = args.location
-    
+
+    # Pagination
+    page = max(1, args.page)
+    data['limit'] = 10
+    data['offset'] = (page - 1) * 10
+
     result = api_call('POST', '/search', data)
+
+    if result.get('has_more'):
+        result['hint'] = f"More results available. Use --page {page + 1} to see next page."
+
+    print(json.dumps(result))
+
+def cmd_recommend(args):
+    """Get profile recommendations based on your profile"""
+    page = max(1, args.page)
+    limit = 10
+    offset = (page - 1) * limit
+
+    result = api_call('GET', '/recommend', params={'limit': limit, 'offset': offset})
+
+    if result.get('has_more'):
+        result['hint'] = f"More results available. Use --page {page + 1} to see next page."
+    if result.get('results'):
+        result['action_hint'] = "Say 'connect <bot_id>' to send a connection request."
+
     print(json.dumps(result))
 
 def cmd_visitors(args):
@@ -523,9 +553,15 @@ def main():
     
     # Search
     search_parser = subparsers.add_parser('search', help='Search profiles')
-    search_parser.add_argument('--interests', help='Search by interests')
-    search_parser.add_argument('--looking-for', help='Search by looking for')
-    search_parser.add_argument('--location', help='Search by location')
+    search_parser.add_argument('query', nargs='*', help='Free-text search (e.g., "AI engineer Mumbai")')
+    search_parser.add_argument('--interests', help='Filter by interests (legacy)')
+    search_parser.add_argument('--looking-for', help='Filter by looking for (legacy)')
+    search_parser.add_argument('--location', help='Filter by location (legacy)')
+    search_parser.add_argument('--page', type=int, default=1, help='Page number (default: 1)')
+
+    # Recommend
+    recommend_parser = subparsers.add_parser('recommend', help='Get recommended profiles based on yours')
+    recommend_parser.add_argument('--page', type=int, default=1, help='Page number (default: 1)')
     
     # Visitors
     subparsers.add_parser('visitors', help='See who viewed your profile')
@@ -615,6 +651,8 @@ def main():
             cmd_message_list(args)
         else:
             msg_parser.print_help()
+    elif args.command == 'recommend':
+        cmd_recommend(args)
     elif args.command == 'check-notifications':
         cmd_check_notifications(args)
     elif args.command == 'setup':

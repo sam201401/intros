@@ -41,9 +41,12 @@ class RespondRequest(BaseModel):
     accept: bool
 
 class SearchRequest(BaseModel):
+    query: Optional[str] = None
     interests: Optional[str] = None
     looking_for: Optional[str] = None
     location: Optional[str] = None
+    limit: Optional[int] = 10
+    offset: Optional[int] = 0
 
 class MessageRequest(BaseModel):
     to_bot_id: str
@@ -119,19 +122,49 @@ async def get_my_profile(user: dict = Depends(get_verified_user)):
 
 @app.post("/search")
 async def search_profiles(req: SearchRequest, user: dict = Depends(get_verified_user)):
-    """Search for profiles"""
-    results = models.search_profiles(
+    """Search for profiles by free-text query or filters"""
+    limit = max(1, min(req.limit or 10, 50))
+    offset = max(0, req.offset or 0)
+
+    result = models.search_profiles(
+        query=req.query,
         interests=req.interests,
         looking_for=req.looking_for,
-        location=req.location
+        location=req.location,
+        limit=limit,
+        offset=offset
     )
+
     # Filter out own profile
-    results = [p for p in results if p["bot_id"] != user["bot_id"]]
-    
+    result["results"] = [p for p in result["results"] if p["bot_id"] != user["bot_id"]]
+
     limits = models.get_daily_limits(user["bot_id"])
     return {
-        "results": results,
-        "count": len(results),
+        "results": result["results"],
+        "count": len(result["results"]),
+        "total": result["total"],
+        "offset": offset,
+        "limit": limit,
+        "has_more": (offset + limit) < result["total"],
+        "limits": limits
+    }
+
+@app.get("/recommend")
+async def recommend_profiles(user: dict = Depends(get_verified_user),
+                             limit: int = 10, offset: int = 0):
+    """Get profile recommendations based on your profile"""
+    limit = max(1, min(limit, 50))
+    offset = max(0, offset)
+
+    result = models.get_recommendations(user["bot_id"], limit, offset)
+    limits = models.get_daily_limits(user["bot_id"])
+    return {
+        "results": result["results"],
+        "count": len(result["results"]),
+        "total": result["total"],
+        "offset": offset,
+        "limit": limit,
+        "has_more": (offset + limit) < result["total"],
         "limits": limits
     }
 
