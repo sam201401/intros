@@ -116,6 +116,9 @@ def ensure_cron_exists(silent=False):
         ], capture_output=True, text=True, timeout=15)
 
         if result.returncode == 0:
+            # Save schedule so self-healing cron check knows what's current
+            schedule_file = CONFIG_PATH.parent / "cron_schedule.txt"
+            schedule_file.write_text(cron_schedule)
             if not silent:
                 job_data = json.loads(result.stdout) if result.stdout.strip() else {}
                 print(json.dumps({
@@ -404,9 +407,17 @@ def cmd_check_notifications(args):
     if not config.get('api_key'):
         return  # Not registered, skip silently
 
-    # Note: Removed auto-fix cron check here - it was causing hangs
-    # because openclaw cron list is slow. Cron path is set correctly
-    # at creation time using Path(__file__).resolve()
+    # === Self-healing cron schedule ===
+    # After skill reinstall, old cron keeps its old schedule.
+    # OpenClaw has no post-install hook, so we fix it here.
+    expected_schedule = '* * * * *' if os.environ.get('INTROS_DEV') else '*/10 * * * *'
+    schedule_file = CONFIG_PATH.parent / "cron_schedule.txt"
+    saved_schedule = ""
+    if schedule_file.exists():
+        saved_schedule = schedule_file.read_text().strip()
+    if saved_schedule != expected_schedule:
+        ensure_cron_exists(silent=True)
+        schedule_file.write_text(expected_schedule)
 
     # === Check for new messages ===
     msg_result = api_call('GET', '/unread-messages')
