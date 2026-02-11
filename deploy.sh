@@ -20,16 +20,20 @@ echo "✅ Skill synced"
 
 # Restart API
 lsof -i :8080 2>/dev/null | awk "NR>1 {print \$2}" | xargs -r kill 2>/dev/null || true
-sleep 1
+sleep 2
 cd /root/intros/api
 nohup python3 -m uvicorn main:app --host 0.0.0.0 --port 8080 > /tmp/intros.log 2>&1 &
-sleep 5
 
-# Verify
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/)
-if [ "$STATUS" = "200" ]; then
-    echo "✅ API restarted (HTTP $STATUS)"
-else
+# Wait for API to be ready (up to 15s)
+for i in $(seq 1 15); do
+    STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health 2>/dev/null)
+    if [ "$STATUS" = "200" ]; then
+        echo "✅ API restarted (ready in ${i}s)"
+        break
+    fi
+    sleep 1
+done
+if [ "$STATUS" != "200" ]; then
     echo "❌ API may have failed (HTTP $STATUS)"
     echo "Check logs: tail /tmp/intros.log"
 fi
