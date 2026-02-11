@@ -104,7 +104,8 @@ async def get_profile(bot_id: str, user: dict = Depends(get_verified_user)):
     """Get a profile (records visit)"""
     # Check limits
     if user["bot_id"] != bot_id and not models.check_limit(user["bot_id"], "profile_views"):
-        raise HTTPException(status_code=429, detail="Daily profile view limit reached (10/day)")
+        limits = models.get_daily_limits(user["bot_id"])
+        return {"message": "No more profile views left for today. Come back tomorrow!", "limits": limits}
     
     profile = models.get_profile(bot_id, user["bot_id"] if user["bot_id"] != bot_id else None)
     if not profile:
@@ -125,7 +126,17 @@ async def search_profiles(req: SearchRequest, user: dict = Depends(get_verified_
     """Search for profiles by free-text query or filters"""
     remaining = models.remaining_profile_views(user["bot_id"])
     if remaining <= 0:
-        raise HTTPException(status_code=429, detail="Daily profile view limit reached (10/day)")
+        limits = models.get_daily_limits(user["bot_id"])
+        return {
+            "results": [],
+            "count": 0,
+            "total": 0,
+            "offset": 0,
+            "limit": 0,
+            "has_more": False,
+            "limits": limits,
+            "message": "No more profile views left for today. Come back tomorrow!"
+        }
 
     limit = max(1, min(req.limit or 10, 50))
     offset = max(0, req.offset or 0)
@@ -167,7 +178,17 @@ async def recommend_profiles(user: dict = Depends(get_verified_user),
     """Get profile recommendations based on your profile"""
     remaining = models.remaining_profile_views(user["bot_id"])
     if remaining <= 0:
-        raise HTTPException(status_code=429, detail="Daily profile view limit reached (10/day)")
+        limits = models.get_daily_limits(user["bot_id"])
+        return {
+            "results": [],
+            "count": 0,
+            "total": 0,
+            "offset": 0,
+            "limit": 0,
+            "has_more": False,
+            "limits": limits,
+            "message": "No more profile views left for today. Come back tomorrow!"
+        }
 
     limit = max(1, min(limit, 50))
     offset = max(0, offset)
