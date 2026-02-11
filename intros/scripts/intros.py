@@ -101,11 +101,13 @@ def ensure_cron_exists(silent=False):
         return False
 
     # Create fresh cron job with the actual script path
+    # Dev mode: every minute. Production: every 10 minutes.
+    cron_schedule = '* * * * *' if os.environ.get('INTROS_DEV') else '*/10 * * * *'
     try:
         result = subprocess.run([
             'openclaw', 'cron', 'add',
             '--name', 'intros-notifications',
-            '--cron', '* * * * *',
+            '--cron', cron_schedule,
             '--session', 'isolated',
             '--wake', 'now',
             '--announce',
@@ -120,7 +122,7 @@ def ensure_cron_exists(silent=False):
                     "success": True,
                     "message": "Intros notifications enabled!",
                     "cron_id": job_data.get('id'),
-                    "schedule": "Every minute"
+                    "schedule": "Every minute" if os.environ.get('INTROS_DEV') else "Every 10 minutes"
                 }))
             return True
         else:
