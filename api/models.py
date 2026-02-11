@@ -153,13 +153,14 @@ def init_db():
 # === User/Registration Functions ===
 
 def create_user(bot_id: str, telegram_id: str = None) -> Dict[str, Any]:
-    """Create a new user, returns api_key and verify_code"""
+    """Create a new user, returns api_key and verify_code.
+    Idempotent: if bot already exists and telegram_id matches, returns existing credentials."""
     conn = get_db()
     c = conn.cursor()
-    
+
     api_key = f"intros_{secrets.token_hex(24)}"
     verify_code = f"VERIFY-{secrets.token_hex(8)}"
-    
+
     try:
         c.execute('''
             INSERT INTO users (bot_id, api_key, telegram_id, verify_code)
@@ -168,6 +169,11 @@ def create_user(bot_id: str, telegram_id: str = None) -> Dict[str, Any]:
         conn.commit()
         return {"success": True, "api_key": api_key, "verify_code": verify_code}
     except sqlite3.IntegrityError:
+        # Bot already exists — return existing credentials if telegram_id matches
+        c.execute('SELECT api_key, verify_code, telegram_id, verified FROM users WHERE bot_id = ?', (bot_id,))
+        row = c.fetchone()
+        if row and telegram_id and row['telegram_id'] == telegram_id:
+            return {"success": True, "api_key": row['api_key'], "verify_code": row['verify_code'], "recovered": True}
         return {"success": False, "error": "Bot already registered"}
     finally:
         conn.close()

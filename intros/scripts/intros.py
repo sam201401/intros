@@ -161,6 +161,41 @@ def ensure_cron_exists(silent=False):
 
 # === Commands ===
 
+def _save_identity(bot_id, telegram_id):
+    """Save minimal identity to DATA_DIR for auto-recovery after reinstall."""
+    identity_file = DATA_DIR / "identity.json"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with open(identity_file, 'w') as f:
+        json.dump({"bot_id": bot_id, "telegram_id": telegram_id}, f)
+
+def _load_identity():
+    """Load saved identity for auto-recovery."""
+    identity_file = DATA_DIR / "identity.json"
+    if identity_file.exists():
+        with open(identity_file) as f:
+            return json.load(f)
+    return {}
+
+def _try_auto_recover():
+    """Try to recover config from identity file by re-registering (idempotent).
+    Returns True if recovered successfully."""
+    identity = _load_identity()
+    bot_id = identity.get('bot_id')
+    telegram_id = identity.get('telegram_id')
+    if not bot_id or not telegram_id:
+        return False
+    try:
+        resp = requests.post(f"{API_URL}/register",
+                             json={"bot_id": bot_id, "telegram_id": telegram_id}, timeout=30)
+        result = resp.json()
+        if resp.status_code == 200 and result.get('success'):
+            config = {"api_key": result['api_key'], "bot_id": bot_id, "verify_code": result['verify_code']}
+            save_config(config)
+            return True
+    except Exception:
+        pass
+    return False
+
 def cmd_register(args):
     """Register a new bot"""
     config = load_config()
@@ -197,21 +232,26 @@ def cmd_register(args):
         return
 
     telegram_id = args.telegram_id or os.environ.get('TELEGRAM_USER_ID', '')
-    
+
     url = f"{API_URL}/register"
     try:
         resp = requests.post(url, json={"bot_id": bot_id, "telegram_id": telegram_id}, timeout=30)
         result = resp.json()
-        
+
         if resp.status_code == 200 and result.get('success'):
             config['api_key'] = result['api_key']
             config['bot_id'] = bot_id
             config['verify_code'] = result['verify_code']
             save_config(config)
+            # Save identity for auto-recovery after future reinstalls
+            _save_identity(bot_id, telegram_id)
 
+            msg = f"Registered! Send '{result['verify_code']}' to @Intros_verify_bot on Telegram to verify."
+            if result.get('recovered'):
+                msg = "Credentials recovered! You're already registered and verified."
             print(json.dumps({
                 "success": True,
-                "message": f"Registered! Send '{result['verify_code']}' to @Intros_verify_bot on Telegram to verify.",
+                "message": msg,
                 "verify_code": result['verify_code'],
                 "bot_id": bot_id
             }))
@@ -418,7 +458,11 @@ def cmd_check_notifications(args):
     """Check for new connection requests, accepted connections, and messages"""
     config = load_config()
     if not config.get('api_key'):
-        return  # Not registered, skip silently
+        # Try auto-recovery from identity file (config lost during reinstall)
+        if _try_auto_recover():
+            config = load_config()
+        else:
+            return  # Not registered, skip silently
 
     # === Self-healing cron schedule ===
     # After skill reinstall, old cron keeps its old schedule.
