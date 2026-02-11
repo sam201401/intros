@@ -27,6 +27,7 @@ def init_db():
             bot_id TEXT UNIQUE NOT NULL,
             api_key TEXT UNIQUE NOT NULL,
             telegram_id TEXT,
+            telegram_chat_id INTEGER,
             verified INTEGER DEFAULT 0,
             verify_code TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -136,22 +137,43 @@ def create_user(bot_id: str, telegram_id: str = None) -> Dict[str, Any]:
     finally:
         conn.close()
 
-def verify_user(verify_code: str) -> Dict[str, Any]:
-    """Verify a user by their verification code"""
+def verify_user(verify_code: str, chat_id: int = None) -> Dict[str, Any]:
+    """Verify a user by their verification code and store telegram chat_id"""
     conn = get_db()
     c = conn.cursor()
-    
+
     c.execute('SELECT bot_id FROM users WHERE verify_code = ? AND verified = 0', (verify_code,))
     row = c.fetchone()
-    
+
     if row:
-        c.execute('UPDATE users SET verified = 1, verify_code = NULL WHERE verify_code = ?', (verify_code,))
+        if chat_id:
+            c.execute('UPDATE users SET verified = 1, verify_code = NULL, telegram_chat_id = ? WHERE verify_code = ?', (chat_id, verify_code))
+        else:
+            c.execute('UPDATE users SET verified = 1, verify_code = NULL WHERE verify_code = ?', (verify_code,))
         conn.commit()
         conn.close()
         return {"success": True, "bot_id": row["bot_id"]}
-    
+
     conn.close()
     return {"success": False, "error": "Invalid or expired code"}
+
+def get_user_by_chat_id(chat_id: int) -> Optional[Dict]:
+    """Get user by Telegram chat ID"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM users WHERE telegram_chat_id = ?', (chat_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_user_by_bot_id(bot_id: str) -> Optional[Dict]:
+    """Get user by bot ID"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM users WHERE bot_id = ?', (bot_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 def get_user_by_api_key(api_key: str) -> Optional[Dict]:
     """Get user by API key"""
