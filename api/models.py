@@ -10,9 +10,11 @@ import secrets
 DB_PATH = Path.home() / "intros" / "intros.db"
 
 def get_db():
-    """Get database connection"""
-    conn = sqlite3.connect(DB_PATH)
+    """Get database connection with WAL mode and timeout"""
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 def init_db():
@@ -111,6 +113,9 @@ def init_db():
     c.execute('CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_bot_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_connections_to_status ON connections(to_bot_id, status)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_connections_from_status ON connections(from_bot_id, status)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_visitors_visitor ON visitors(visitor_bot_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_visitors_visited ON visitors(visited_bot_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_daily_limits_bot_date ON daily_limits(bot_id, date)')
 
     # FTS5 full-text search index for profiles
     c.execute('''
@@ -142,10 +147,6 @@ def init_db():
         except sqlite3.OperationalError:
             pass  # Trigger already exists
 
-    conn.commit()
-
-    # Rebuild FTS index from existing data (idempotent, fast for <1000 rows)
-    c.execute("INSERT INTO profiles_fts(profiles_fts) VALUES('rebuild')")
     conn.commit()
     conn.close()
 
@@ -264,17 +265,17 @@ def get_profile(bot_id: str, viewer_bot_id: str = None) -> Optional[Dict]:
     """Get a profile, optionally recording the visit"""
     conn = get_db()
     c = conn.cursor()
-    
+
     c.execute('SELECT * FROM profiles WHERE bot_id = ?', (bot_id,))
     row = c.fetchone()
-    
+
     if row and viewer_bot_id and viewer_bot_id != bot_id:
         # Record visit
         c.execute('''
             INSERT INTO visitors (visitor_bot_id, visited_bot_id)
             VALUES (?, ?)
         ''', (viewer_bot_id, bot_id))
-        
+
         # Update daily limit
         today = datetime.now().strftime('%Y-%m-%d')
         c.execute('''
@@ -282,18 +283,25 @@ def get_profile(bot_id: str, viewer_bot_id: str = None) -> Optional[Dict]:
             VALUES (?, ?, 1)
             ON CONFLICT(bot_id, date) DO UPDATE SET profile_views = profile_views + 1
         ''', (viewer_bot_id, today))
-        
+
         conn.commit()
-    
-    conn.close()
-    
+
     if row:
         profile = dict(row)
-        # Hide telegram if not public and not connected
+        # Hide telegram if not public and not connected (inline check, no extra connection)
         if not profile['telegram_public'] and viewer_bot_id:
-            if not are_connected(viewer_bot_id, bot_id):
+            c.execute('''
+                SELECT 1 FROM connections
+                WHERE status = 'accepted' AND (
+                    (from_bot_id = ? AND to_bot_id = ?) OR
+                    (from_bot_id = ? AND to_bot_id = ?)
+                )
+            ''', (viewer_bot_id, bot_id, bot_id, viewer_bot_id))
+            if not c.fetchone():
                 profile['telegram_handle'] = None
+        conn.close()
         return profile
+    conn.close()
     return None
 
 def _sanitize_fts_query(text: str) -> str:
@@ -320,28 +328,30 @@ def _clean_results(rows, viewer_bot_id: str = None, seen_bot_ids: set = None) ->
         results.append(profile)
     return results
 
-def _get_seen_bot_ids(viewer_bot_id: str) -> set:
+def _get_seen_bot_ids(viewer_bot_id: str, conn=None) -> set:
     """Get set of bot_ids the viewer has already visited"""
     if not viewer_bot_id:
         return set()
-    conn = get_db()
+    own_conn = conn is None
+    if own_conn:
+        conn = get_db()
     c = conn.cursor()
     c.execute('SELECT DISTINCT visited_bot_id FROM visitors WHERE visitor_bot_id = ?',
               (viewer_bot_id,))
     ids = {row[0] for row in c.fetchall()}
-    conn.close()
+    if own_conn:
+        conn.close()
     return ids
 
 def _browse_profiles(limit: int = 10, offset: int = 0,
                      viewer_bot_id: str = None) -> Dict[str, Any]:
     """Browse all profiles, unseen first then newest"""
-    seen_ids = _get_seen_bot_ids(viewer_bot_id)
     conn = get_db()
+    seen_ids = _get_seen_bot_ids(viewer_bot_id, conn)
     c = conn.cursor()
     c.execute('SELECT COUNT(*) FROM profiles')
     total = c.fetchone()[0]
     if viewer_bot_id and seen_ids:
-        # Sort unseen first, then by recency
         placeholders = ','.join('?' for _ in seen_ids)
         c.execute(f'''
             SELECT *, CASE WHEN bot_id IN ({placeholders}) THEN 1 ELSE 0 END as seen_flag
@@ -359,8 +369,8 @@ def _browse_profiles(limit: int = 10, offset: int = 0,
 def _fts_search(fts_query: str, limit: int = 10, offset: int = 0,
                 viewer_bot_id: str = None) -> Dict[str, Any]:
     """Run FTS5 search with BM25 ranking, unseen profiles first"""
-    seen_ids = _get_seen_bot_ids(viewer_bot_id)
     conn = get_db()
+    seen_ids = _get_seen_bot_ids(viewer_bot_id, conn)
     c = conn.cursor()
     c.execute('SELECT COUNT(*) FROM profiles_fts WHERE profiles_fts MATCH ?', (fts_query,))
     total = c.fetchone()[0]
@@ -412,9 +422,16 @@ def search_profiles(query: str = None, interests: str = None, looking_for: str =
 
 def get_recommendations(bot_id: str, limit: int = 10, offset: int = 0) -> Dict[str, Any]:
     """Recommend profiles similar to the user's own profile. Unseen first."""
-    profile = get_profile(bot_id)
-    if not profile:
+    conn = get_db()
+    c = conn.cursor()
+
+    # Load own profile inline (avoids extra connection from get_profile)
+    c.execute('SELECT * FROM profiles WHERE bot_id = ?', (bot_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
         return {"results": [], "total": 0}
+    profile = dict(row)
 
     # Build query from user's own profile fields
     parts = ' '.join(filter(None, [
@@ -424,11 +441,10 @@ def get_recommendations(bot_id: str, limit: int = 10, offset: int = 0) -> Dict[s
     ]))
     fts_query = _sanitize_fts_query(parts)
     if not fts_query:
+        conn.close()
         return _browse_profiles(limit, offset, bot_id)
 
-    seen_ids = _get_seen_bot_ids(bot_id)
-    conn = get_db()
-    c = conn.cursor()
+    seen_ids = _get_seen_bot_ids(bot_id, conn)
 
     # Count total (excluding self)
     c.execute('''
@@ -476,23 +492,22 @@ def record_profile_views(viewer_bot_id: str, viewed_bot_ids: List[str]):
     """Record profile views for multiple profiles at once (search/recommend results)"""
     if not viewed_bot_ids or not viewer_bot_id:
         return
+    # Filter out self
+    others = [b for b in viewed_bot_ids if b != viewer_bot_id]
+    if not others:
+        return
     conn = get_db()
     c = conn.cursor()
-    today = datetime.now().strftime('%Y-%m-%d')
-    for bot_id in viewed_bot_ids:
-        if bot_id == viewer_bot_id:
-            continue
-        # Record visit
-        c.execute('INSERT INTO visitors (visitor_bot_id, visited_bot_id) VALUES (?, ?)',
-                  (viewer_bot_id, bot_id))
+    # Batch insert visitor records
+    c.executemany('INSERT INTO visitors (visitor_bot_id, visited_bot_id) VALUES (?, ?)',
+                  [(viewer_bot_id, bot_id) for bot_id in others])
     # Increment daily limit by total views
-    count = len([b for b in viewed_bot_ids if b != viewer_bot_id])
-    if count > 0:
-        c.execute('''
-            INSERT INTO daily_limits (bot_id, date, profile_views)
-            VALUES (?, ?, ?)
-            ON CONFLICT(bot_id, date) DO UPDATE SET profile_views = profile_views + ?
-        ''', (viewer_bot_id, today, count, count))
+    today = datetime.now().strftime('%Y-%m-%d')
+    c.execute('''
+        INSERT INTO daily_limits (bot_id, date, profile_views)
+        VALUES (?, ?, ?)
+        ON CONFLICT(bot_id, date) DO UPDATE SET profile_views = profile_views + ?
+    ''', (viewer_bot_id, today, len(others), len(others)))
     conn.commit()
     conn.close()
 
@@ -649,16 +664,23 @@ def get_connections(bot_id: str) -> List[Dict]:
 
 def send_message(from_bot_id: str, to_bot_id: str, content: str) -> Dict[str, Any]:
     """Send a message to a connected user"""
-    # Check if connected
-    if not are_connected(from_bot_id, to_bot_id):
-        return {"success": False, "error": "You must be connected to send messages"}
-
-    # Check content length
     if len(content) > 500:
         return {"success": False, "error": "Message too long (max 500 characters)"}
 
     conn = get_db()
     c = conn.cursor()
+
+    # Check if connected (inline, same connection)
+    c.execute('''
+        SELECT 1 FROM connections
+        WHERE status = 'accepted' AND (
+            (from_bot_id = ? AND to_bot_id = ?) OR
+            (from_bot_id = ? AND to_bot_id = ?)
+        )
+    ''', (from_bot_id, to_bot_id, to_bot_id, from_bot_id))
+    if not c.fetchone():
+        conn.close()
+        return {"success": False, "error": "You must be connected to send messages"}
 
     c.execute('''
         INSERT INTO messages (from_bot_id, to_bot_id, content)
@@ -673,12 +695,20 @@ def send_message(from_bot_id: str, to_bot_id: str, content: str) -> Dict[str, An
 
 def get_messages(bot_id: str, other_bot_id: str, limit: int = 50) -> List[Dict]:
     """Get conversation between two users"""
-    # Check if connected
-    if not are_connected(bot_id, other_bot_id):
-        return []
-
     conn = get_db()
     c = conn.cursor()
+
+    # Check if connected (inline, same connection)
+    c.execute('''
+        SELECT 1 FROM connections
+        WHERE status = 'accepted' AND (
+            (from_bot_id = ? AND to_bot_id = ?) OR
+            (from_bot_id = ? AND to_bot_id = ?)
+        )
+    ''', (bot_id, other_bot_id, other_bot_id, bot_id))
+    if not c.fetchone():
+        conn.close()
+        return []
 
     # Get messages in both directions
     c.execute('''
