@@ -66,6 +66,10 @@ def ensure_cron_exists(silent=False):
     """Ensure cron job exists with correct script path. Always recreates on reinstall. Returns True if created, False if failed."""
     import subprocess
 
+    # Pass OPENCLAW_STATE_DIR to subprocess so openclaw CLI uses the right instance
+    sub_env = os.environ.copy()
+    sub_env['OPENCLAW_STATE_DIR'] = STATE_DIR
+
     # Known intros cron names - delete all on reinstall
     INTROS_CRON_NAMES = {
         'intros-notifications',
@@ -80,7 +84,7 @@ def ensure_cron_exists(silent=False):
     try:
         result = subprocess.run(
             ['openclaw', 'cron', 'list', '--json'],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, timeout=30, env=sub_env
         )
         if result.returncode == 0 and result.stdout.strip():
             data = json.loads(result.stdout)
@@ -92,7 +96,7 @@ def ensure_cron_exists(silent=False):
                     job_id = job.get('id')
                     subprocess.run(
                         ['openclaw', 'cron', 'delete', job_id],
-                        capture_output=True, text=True, timeout=10
+                        capture_output=True, text=True, timeout=10, env=sub_env
                     )
     except Exception as e:
         # If we can't check/delete, DON'T create (prevents duplicates)
@@ -113,7 +117,7 @@ def ensure_cron_exists(silent=False):
             '--announce',
             '--message', f'Run: python3 {script_path} check-notifications — If no output, DO NOT RESPOND AT ALL. Only relay actual notification text.',
             '--json'
-        ], capture_output=True, text=True, timeout=15)
+        ], capture_output=True, text=True, timeout=15, env=sub_env)
 
         if result.returncode == 0:
             # Save schedule so self-healing cron check knows what's current
