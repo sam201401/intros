@@ -121,7 +121,7 @@ def ensure_cron_exists(silent=False):
             'openclaw', 'cron', 'add',
             '--name', 'intros-notifications',
             '--cron', cron_schedule,
-            '--session', 'isolated',
+            '--session', 'default',
             '--wake', 'now',
             '--announce',
             '--message', f'Run: python3 {script_path} check-notifications — If no output, DO NOT RESPOND AT ALL. Only relay actual notification text.',
@@ -463,21 +463,6 @@ def cmd_check_notifications(args):
             config = load_config()
         else:
             return  # Not registered, skip silently
-
-    # === Cleanup old cron sessions ===
-    # Each isolated cron run creates a session file. Delete files older than
-    # 30 minutes to avoid pileup, while preserving active conversations
-    # and the current run's session.
-    import time
-    sessions_dir = Path(STATE_DIR) / "agents" / "main" / "sessions"
-    if sessions_dir.exists():
-        cutoff = time.time() - 1800  # 30 minutes ago
-        for f in sessions_dir.glob("*.jsonl"):
-            try:
-                if f.stat().st_mtime < cutoff:
-                    f.unlink()
-            except OSError:
-                pass
 
     # === Self-healing cron schedule ===
     # After skill reinstall, old cron keeps its old schedule.
