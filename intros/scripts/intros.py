@@ -121,9 +121,10 @@ def ensure_cron_exists(silent=False):
             'openclaw', 'cron', 'add',
             '--name', 'intros-notifications',
             '--cron', cron_schedule,
-            '--session', 'main',
+            '--session', 'isolated',
             '--wake', 'now',
-            '--system-event', f'Run: python3 {script_path} check-notifications — If no output, DO NOT RESPOND AT ALL. Only relay actual notification text.',
+            '--announce',
+            '--message', f'Run: python3 {script_path} check-notifications — If no output, DO NOT RESPOND AT ALL. Only relay actual notification text.',
             '--json'
         ], capture_output=True, text=True, timeout=15, env=sub_env)
 
