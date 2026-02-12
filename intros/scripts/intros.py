@@ -69,96 +69,6 @@ def api_call(method, endpoint, data=None, params=None):
     except Exception as e:
         return {"error": str(e)}
 
-# === Helper Functions ===
-
-def ensure_cron_exists(silent=False):
-    """Ensure cron job exists with correct script path. Always recreates on reinstall. Returns True if created, False if failed."""
-    import subprocess
-
-    # Pass OPENCLAW_STATE_DIR to subprocess so openclaw CLI uses the right instance
-    sub_env = os.environ.copy()
-    sub_env['OPENCLAW_STATE_DIR'] = STATE_DIR
-
-    # Known intros cron names - delete all on reinstall
-    INTROS_CRON_NAMES = {
-        'intros-notifications',
-        'intros-matches',
-        'intros-messages',
-        'intros-reminders',
-    }
-
-    # Get the actual script path (where this script is running from)
-    script_path = Path(__file__).resolve()
-
-    try:
-        result = subprocess.run(
-            ['openclaw', 'cron', 'list', '--json'],
-            capture_output=True, text=True, timeout=30, env=sub_env
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            data = json.loads(result.stdout)
-            jobs = data.get('jobs', []) if isinstance(data, dict) else data
-
-            # Delete ALL existing intros crons (handles reinstalls, old versions, duplicates)
-            for job in jobs:
-                if job.get('name') in INTROS_CRON_NAMES:
-                    job_id = job.get('id')
-                    subprocess.run(
-                        ['openclaw', 'cron', 'delete', job_id],
-                        capture_output=True, text=True, timeout=10, env=sub_env
-                    )
-    except Exception as e:
-        # If we can't check/delete, DON'T create (prevents duplicates)
-        if not silent:
-            print(json.dumps({"error": f"Could not check cron status: {e}"}))
-        return False
-
-    # Create fresh cron job with the actual script path
-    # Dev mode: every minute. Production: every 10 minutes.
-    cron_schedule = '* * * * *' if os.environ.get('INTROS_DEV') else '*/10 * * * *'
-    try:
-        result = subprocess.run([
-            'openclaw', 'cron', 'add',
-            '--name', 'intros-notifications',
-            '--cron', cron_schedule,
-            '--session', 'isolated',
-            '--wake', 'now',
-            '--announce',
-            '--message', f'Run: python3 {script_path} check-notifications — If no output, DO NOT RESPOND AT ALL. Only relay actual notification text.',
-            '--json'
-        ], capture_output=True, text=True, timeout=15, env=sub_env)
-
-        if result.returncode == 0:
-            # Save schedule so self-healing cron check knows what's current
-            schedule_file = DATA_DIR / "cron_schedule.txt"
-            schedule_file.write_text(cron_schedule)
-            if not silent:
-                job_data = json.loads(result.stdout) if result.stdout.strip() else {}
-                print(json.dumps({
-                    "success": True,
-                    "message": "Intros notifications enabled!",
-                    "cron_id": job_data.get('id'),
-                    "schedule": "Every minute" if os.environ.get('INTROS_DEV') else "Every 10 minutes"
-                }))
-            return True
-        else:
-            if not silent:
-                print(json.dumps({
-                    "error": "Failed to register cron job",
-                    "details": result.stderr or result.stdout
-                }))
-            return False
-    except FileNotFoundError:
-        if not silent:
-            print(json.dumps({
-                "error": "openclaw CLI not found. Make sure OpenClaw is installed."
-            }))
-        return False
-    except Exception as e:
-        if not silent:
-            print(json.dumps({"error": str(e)}))
-        return False
-
 # === Commands ===
 
 def _save_identity(bot_id, telegram_id):
@@ -202,11 +112,6 @@ def cmd_register(args):
 
     # IMPORTANT: Never re-register if config exists - prevents duplicate accounts
     if config.get('api_key') and config.get('bot_id'):
-        # Silent fix: if user has profile but cron missing, create it
-        profile_result = api_call('GET', '/profile')
-        if 'error' not in profile_result and profile_result.get('name'):
-            ensure_cron_exists(silent=True)
-
         print(json.dumps({
             "message": "Already registered",
             "bot_id": config.get('bot_id'),
@@ -282,8 +187,6 @@ def cmd_profile_create(args):
     
     result = api_call('POST', '/profile', data)
     if result.get('success'):
-        # Silently ensure cron exists after profile is set up
-        ensure_cron_exists(silent=True)
         print(json.dumps({"success": True, "message": "Profile updated!"}))
     else:
         print(json.dumps(result))
@@ -403,8 +306,11 @@ def cmd_web(args):
         print(json.dumps({"error": "Not registered"}))
 
 def cmd_setup(args):
-    """Setup intros skill - registers cron job for notifications"""
-    ensure_cron_exists(silent=False)
+    """Setup intros skill - notifications are now automatic via @Intros_verify_bot"""
+    print(json.dumps({
+        "message": "Notifications are automatic! After verifying with @Intros_verify_bot, you'll receive notifications for new messages and connection requests directly on Telegram.",
+        "hint": "If you're not getting notifications, send /start to @Intros_verify_bot to re-link your account."
+    }))
 
 # === Messaging Commands ===
 
@@ -455,7 +361,7 @@ def cmd_message_list(args):
         print(json.dumps(result))
 
 def cmd_check_notifications(args):
-    """Check for new connection requests, accepted connections, and messages"""
+    """Check for new connection requests, accepted connections, and messages (legacy/manual fallback)"""
     config = load_config()
     if not config.get('api_key'):
         # Try auto-recovery from identity file (config lost during reinstall)
@@ -463,18 +369,6 @@ def cmd_check_notifications(args):
             config = load_config()
         else:
             return  # Not registered, skip silently
-
-    # === Self-healing cron schedule ===
-    # After skill reinstall, old cron keeps its old schedule.
-    # OpenClaw has no post-install hook, so we fix it here.
-    expected_schedule = '* * * * *' if os.environ.get('INTROS_DEV') else '*/10 * * * *'
-    schedule_file = DATA_DIR / "cron_schedule.txt"
-    saved_schedule = ""
-    if schedule_file.exists():
-        saved_schedule = schedule_file.read_text().strip()
-    if saved_schedule != expected_schedule:
-        ensure_cron_exists(silent=True)
-        schedule_file.write_text(expected_schedule)
 
     # === Check for new messages ===
     msg_result = api_call('GET', '/unread-messages')

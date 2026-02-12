@@ -17,10 +17,9 @@ IMPORTANT: Before running register, ask the user to choose a unique username (lo
 ```bash
 python3 ~/.openclaw/skills/intros/scripts/intros.py register --bot-id "chosen_username"
 ```
-This also auto-enables notifications (cron job that checks for connection requests every minute).
 
 ### Step 2: Verify
-Send the verification code to @Intros_verify_bot on Telegram.
+Send the verification code to @Intros_verify_bot on Telegram. This also enables automatic notifications — you'll receive Telegram messages for new connections, messages, and daily match suggestions.
 
 ### Step 3: Create Profile
 ```bash
@@ -113,7 +112,6 @@ python3 ~/.openclaw/skills/intros/scripts/intros.py web
 
 When user says:
 - "Join Intros" → First ask "Choose a unique username for Intros (lowercase, no spaces):", then run register --bot-id "their_choice"
-- "Setup Intros notifications" → Run setup command
 - "Create my Intros profile" → Run profile create with guided questions
 - "Find co-founders" → Run search co-founders
 - "Find people interested in AI" → Run search AI
@@ -158,97 +156,13 @@ Users can specify what they're looking for:
 
 ## Notifications
 
-The skill automatically checks for new connection requests, accepted connections, and messages.
+Notifications are delivered automatically via @Intros_verify_bot on Telegram. After verifying, you'll receive:
 
-### Connection Request Notification
-```
-🔔 New Intros connection request!
+- **New messages** — when someone sends you a message
+- **Connection requests** — when someone wants to connect
+- **Accepted connections** — when your request is accepted
+- **Daily matches** — once per day, a nudge to check your recommended profiles
 
-From: Alice
-Interests: AI, startups
-Location: San Francisco
+No cron jobs or gateway setup needed. Notifications are checked every 60 seconds server-side.
 
-Say 'accept alice_bot' or 'decline alice_bot'
-```
-
-### Message Notification
-```
-📬 New message from Alice!
-
-"Hey, want to collaborate on that AI project?"
-
-Reply with: message send alice_bot "your reply"
-```
-
-You can respond directly in the chat.
-
-## Reliable Notifications
-
-For notifications to work reliably, your OpenClaw gateway must be running continuously. We recommend running the gateway as a supervised service that auto-restarts on failure.
-
-### Option 1: systemd (Linux)
-
-Create `/etc/systemd/system/openclaw.service`:
-```ini
-[Unit]
-Description=OpenClaw Gateway
-After=network.target
-
-[Service]
-Type=simple
-User=your-username
-ExecStart=/usr/bin/openclaw gateway
-Restart=always
-RestartSec=5
-Environment=HOME=/home/your-username
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Then enable it:
-```bash
-sudo systemctl enable openclaw
-sudo systemctl start openclaw
-```
-
-### Option 2: pm2 (Cross-platform)
-
-```bash
-npm install -g pm2
-pm2 start "openclaw gateway" --name openclaw
-pm2 save
-pm2 startup  # Follow instructions to auto-start on boot
-```
-
-### Option 3: macOS LaunchAgent
-
-Create `~/Library/LaunchAgents/com.openclaw.gateway.plist`:
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.openclaw.gateway</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/openclaw</string>
-        <string>gateway</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-</dict>
-</plist>
-```
-
-Then load it:
-```bash
-launchctl load ~/Library/LaunchAgents/com.openclaw.gateway.plist
-```
-
-### Why This Matters
-
-Without supervision, if your gateway becomes unresponsive (network timeout, crash, etc.), notifications will stop until you manually restart it. Supervised services automatically recover from failures.
+If you're not receiving notifications, send `/start` to @Intros_verify_bot to re-link your account.

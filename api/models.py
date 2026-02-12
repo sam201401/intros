@@ -108,6 +108,18 @@ def init_db():
         )
     ''')
 
+    # Notification tracking (replaces file-based seen tracking)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS notifications_sent (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bot_id TEXT NOT NULL,
+            notification_type TEXT NOT NULL,
+            reference_id INTEGER NOT NULL,
+            sent_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(bot_id, notification_type, reference_id)
+        )
+    ''')
+
     # Add indexes for performance
     c.execute('CREATE INDEX IF NOT EXISTS idx_messages_to_unread ON messages(to_bot_id, read)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_bot_id)')
@@ -116,6 +128,7 @@ def init_db():
     c.execute('CREATE INDEX IF NOT EXISTS idx_visitors_visitor ON visitors(visitor_bot_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_visitors_visited ON visitors(visited_bot_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_daily_limits_bot_date ON daily_limits(bot_id, date)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_notif_bot ON notifications_sent(bot_id, notification_type)')
 
     # FTS5 full-text search index for profiles
     c.execute('''
@@ -923,6 +936,47 @@ def delete_user(bot_id: str) -> Dict:
     conn.commit()
     conn.close()
     return {"success": True}
+
+# === Notification Functions ===
+
+def get_notifiable_users() -> List[Dict]:
+    """Get all verified users with a telegram_chat_id for push notifications"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT bot_id, telegram_chat_id FROM users WHERE verified = 1 AND telegram_chat_id IS NOT NULL')
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def is_notification_sent(bot_id: str, notif_type: str, ref_id: int) -> bool:
+    """Check if a notification was already sent"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT 1 FROM notifications_sent WHERE bot_id = ? AND notification_type = ? AND reference_id = ?',
+              (bot_id, notif_type, ref_id))
+    result = c.fetchone() is not None
+    conn.close()
+    return result
+
+def mark_notification_sent(bot_id: str, notif_type: str, ref_id: int):
+    """Record that a notification was sent (idempotent)"""
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        c.execute('INSERT OR IGNORE INTO notifications_sent (bot_id, notification_type, reference_id) VALUES (?, ?, ?)',
+                  (bot_id, notif_type, ref_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+def update_user_chat_id(telegram_id: str, chat_id: int):
+    """Update telegram_chat_id for a user matched by telegram_id"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('UPDATE users SET telegram_chat_id = ? WHERE telegram_id = ? AND telegram_chat_id IS NULL',
+              (chat_id, str(telegram_id)))
+    conn.commit()
+    conn.close()
 
 # Initialize DB on import
 init_db()

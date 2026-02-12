@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 import models
 import asyncio
-from telegram_verify import start_verify_bot
+from telegram_verify import start_verify_bot, start_notification_loop
 from web_ui import router as web_router
 
 app = FastAPI(title="Intros API", version="1.0.0")
@@ -345,6 +345,9 @@ async def startup_event():
 
     # Start verify bot in background
     asyncio.create_task(start_verify_bot())
+
+    # Start notification loop (checks every 60s, sends via Telegram)
+    asyncio.create_task(start_notification_loop())
 
 # === Health Check ===
 
