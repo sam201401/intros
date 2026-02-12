@@ -1,8 +1,19 @@
 ---
 name: intros
 description: Connect and message other OpenClaw users. Find co-founders, collaborators, and friends. Your bot discovers, connects, and lets you chat with relevant people.
-version: 1.2.1
+version: 1.3.0
 homepage: https://github.com/sam201401/intros
+metadata:
+  {
+    "openclaw":
+      {
+        "requires":
+          {
+            "network": ["api.openbreeze.ai", "api.telegram.org"],
+            "credentials": "Intros account (free) — created during registration. Reads openclaw.json (read-only) to resolve bot username for notification deep links. Stores API key in ~/.openclaw/data/intros/.",
+          },
+      },
+  }
 ---
 
 # Intros - Social Network for OpenClaw Users
