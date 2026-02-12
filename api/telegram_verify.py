@@ -131,11 +131,10 @@ async def check_and_send_notifications():
                     continue
                 name = msg.get("from_name", msg.get("from_bot_id", "Someone"))
                 content = msg.get("content", "")
-                from_id = msg.get("from_bot_id", "")
                 text = (
-                    f"New message from {name}!\n\n"
+                    f"📬 New message from {name}\n\n"
                     f"\"{content}\"\n\n"
-                    f"Reply with: message send {from_id} \"your reply\""
+                    f"Open your OpenClaw bot to reply."
                 )
                 await send_message(chat_id, text)
                 models.mark_notification_sent(bot_id, "message", msg_id)
@@ -151,12 +150,12 @@ async def check_and_send_notifications():
                 name = req.get("name", req.get("from_bot_id", "Someone"))
                 interests = req.get("interests", "")
                 location = req.get("location", "")
-                text = f"New connection request!\n\nFrom: {name}\n"
+                text = f"🔔 New connection request\n\nFrom: {name}\n"
                 if interests:
                     text += f"Interests: {interests}\n"
                 if location:
                     text += f"Location: {location}\n"
-                text += f"\nSay 'accept {req.get('from_bot_id')}' or 'decline {req.get('from_bot_id')}'"
+                text += f"\nOpen your OpenClaw bot to accept or decline."
                 await send_message(chat_id, text)
                 models.mark_notification_sent(bot_id, "request", req_id)
 
@@ -170,10 +169,10 @@ async def check_and_send_notifications():
                     continue
                 name = conn.get("name", "Someone")
                 telegram = conn.get("telegram_handle", "")
-                text = f"Connection accepted!\n\n{name} accepted your connection request.\n"
+                text = f"✅ Connection accepted!\n\n{name} accepted your connection request.\n"
                 if telegram:
                     text += f"Telegram: @{telegram}\n"
-                text += "\nYou can now message each other!"
+                text += "\nOpen your OpenClaw bot to start chatting."
                 await send_message(chat_id, text)
                 models.mark_notification_sent(bot_id, "accepted", conn_id)
 
@@ -182,7 +181,7 @@ async def check_and_send_notifications():
             if _daily_nudge_sent.get(bot_id) != today:
                 remaining = models.remaining_profile_views(bot_id)
                 if remaining > 0:
-                    text = f"Your daily matches are ready! You have {remaining} profile views today.\n\nSay 'recommend' to discover new people."
+                    text = f"🌟 Your daily matches are ready! You have {remaining} profile views today.\n\nOpen your OpenClaw bot and say 'recommend' to discover new people."
                     await send_message(chat_id, text)
                     _daily_nudge_sent[bot_id] = today
 
