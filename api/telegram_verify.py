@@ -31,19 +31,25 @@ async def get_updates(offset: int = 0) -> list:
             print(f"Error getting updates: {e}")
     return []
 
-async def send_message(chat_id: int, text: str, reply_markup: dict = None):
-    """Send message to Telegram user, optionally with inline keyboard"""
+async def send_message(chat_id: int, text: str, reply_markup: dict = None) -> bool:
+    """Send message to Telegram user, optionally with inline keyboard. Returns True on success."""
     async with aiohttp.ClientSession() as session:
         try:
             payload = {"chat_id": chat_id, "text": text}
             if reply_markup:
                 payload["reply_markup"] = reply_markup
-            await session.post(
+            async with session.post(
                 f"{TELEGRAM_API}/sendMessage",
                 json=payload
-            )
+            ) as resp:
+                data = await resp.json()
+                if data.get("ok"):
+                    return True
+                print(f"Telegram send failed: {data}")
+                return False
         except Exception as e:
             print(f"Error sending message: {e}")
+            return False
 
 def _open_bot_markup(bot_username: str) -> dict:
     """Build Telegram inline keyboard with 'Open Bot' deep link button"""
@@ -147,8 +153,8 @@ async def check_and_send_notifications():
                 text = f"📬 New message from {name}\n\n\"{content}\""
                 if not markup:
                     text += "\n\nOpen your OpenClaw bot to reply."
-                await send_message(chat_id, text, reply_markup=markup)
-                models.mark_notification_sent(bot_id, "message", msg_id)
+                if await send_message(chat_id, text, reply_markup=markup):
+                    models.mark_notification_sent(bot_id, "message", msg_id)
 
             # 2. New pending connection requests
             requests = models.get_pending_requests(bot_id)
@@ -168,8 +174,8 @@ async def check_and_send_notifications():
                     text += f"Location: {location}\n"
                 if not markup:
                     text += "\nOpen your OpenClaw bot to accept or decline."
-                await send_message(chat_id, text, reply_markup=markup)
-                models.mark_notification_sent(bot_id, "request", req_id)
+                if await send_message(chat_id, text, reply_markup=markup):
+                    models.mark_notification_sent(bot_id, "request", req_id)
 
             # 3. Newly accepted connections
             accepted = models.get_accepted_connections(bot_id)
@@ -186,8 +192,8 @@ async def check_and_send_notifications():
                     text += f"Telegram: @{telegram}\n"
                 if not markup:
                     text += "\nOpen your OpenClaw bot to start chatting."
-                await send_message(chat_id, text, reply_markup=markup)
-                models.mark_notification_sent(bot_id, "accepted", conn_id)
+                if await send_message(chat_id, text, reply_markup=markup):
+                    models.mark_notification_sent(bot_id, "accepted", conn_id)
 
             # 4. Daily matches nudge (once per day)
             today = date.today().isoformat()
@@ -197,8 +203,8 @@ async def check_and_send_notifications():
                     text = f"🌟 Your daily matches are ready! You have {remaining} profile views today."
                     if not markup:
                         text += "\n\nOpen your OpenClaw bot and say 'recommend' to discover new people."
-                    await send_message(chat_id, text, reply_markup=markup)
-                    _daily_nudge_sent[bot_id] = today
+                    if await send_message(chat_id, text, reply_markup=markup):
+                        _daily_nudge_sent[bot_id] = today
 
         except Exception as e:
             print(f"Notification error for {bot_id}: {e}")
