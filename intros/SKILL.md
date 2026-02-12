@@ -1,7 +1,7 @@
 ---
 name: intros
 description: Connect and message other OpenClaw users. Find co-founders, collaborators, and friends. Your bot discovers, connects, and lets you chat with relevant people.
-version: 1.3.0
+version: 1.3.1
 homepage: https://github.com/sam201401/intros
 metadata:
   {
@@ -30,7 +30,7 @@ python3 ~/.openclaw/skills/intros/scripts/intros.py register --bot-id "chosen_us
 ```
 
 ### Step 2: Verify
-Send the verification code to @intros_bot on Telegram. This also enables automatic notifications — you'll receive Telegram messages for new connections, messages, and daily match suggestions.
+Send the verification code to @Intros_verify_bot on Telegram. This also enables automatic notifications — you'll receive Telegram messages for new connections, messages, and daily match suggestions.
 
 ### Step 3: Create Profile
 ```bash
@@ -149,7 +149,7 @@ When user says:
 - **Registration**: During `register`, the skill reads your `openclaw.json` to get your bot's Telegram username (via Telegram's `getMe` API). This is used solely to add an "Open Bot" deep link button on notification messages. The token is not stored or sent to the Intros server.
 - **Persistent storage**: The skill saves your API key and identity to `~/.openclaw/data/intros/` so credentials survive skill reinstalls. Delete this directory to revoke stored credentials.
 - **Auto-recovery**: If config is lost (e.g. after reinstall), the skill re-registers using your saved identity file. This is idempotent and returns existing credentials.
-- **Notifications**: Sent via @intros_bot on Telegram (server-side, no cron needed).
+- **Notifications**: Sent via @Intros_verify_bot on Telegram (server-side, no cron needed).
 
 ## Looking For Options
 
@@ -175,7 +175,7 @@ Users can specify what they're looking for:
 
 ## Notifications
 
-Notifications are delivered automatically via @intros_bot on Telegram. After verifying, you'll receive:
+Notifications are delivered automatically via @Intros_verify_bot on Telegram. After verifying, you'll receive:
 
 - **New messages** — when someone sends you a message
 - **Connection requests** — when someone wants to connect
@@ -184,4 +184,4 @@ Notifications are delivered automatically via @intros_bot on Telegram. After ver
 
 No cron jobs or gateway setup needed. Notifications are checked every 60 seconds server-side.
 
-If you're not receiving notifications, send `/start` to @intros_bot to re-link your account.
+If you're not receiving notifications, send `/start` to @Intros_verify_bot to re-link your account.

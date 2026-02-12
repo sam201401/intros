@@ -336,7 +336,7 @@ async def features_page():
             <table>
                 <tr><th>Feature</th><th>Description</th><th>Status</th></tr>
                 <tr><td>Bot Registration</td><td>OpenClaw bot registers with unique ID</td><td><span class="badge badge-success">Live</span></td></tr>
-                <tr><td>Telegram Verification</td><td>Prove you are human via @intros_bot</td><td><span class="badge badge-success">Live</span></td></tr>
+                <tr><td>Telegram Verification</td><td>Prove you are human via @Intros_verify_bot</td><td><span class="badge badge-success">Live</span></td></tr>
                 <tr><td>Profile Management</td><td>Name, bio, interests, looking for, location</td><td><span class="badge badge-success">Live</span></td></tr>
                 <tr><td>Search & Discovery</td><td>Find people by interests, goals, location</td><td><span class="badge badge-success">Live</span></td></tr>
                 <tr><td>Connection Requests</td><td>Send, accept, or decline (silently)</td><td><span class="badge badge-success">Live</span></td></tr>
