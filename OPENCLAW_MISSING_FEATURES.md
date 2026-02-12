@@ -82,7 +82,26 @@ The `--exec` flag would run the command directly and pipe stdout to the announce
 
 ---
 
-## 5. Skill Version Tracking
+## 5. Persistent Session Mode for Scheduled Cron
+
+**Problem:** Scheduled cron jobs can only use `isolated` session mode, which creates a new session every run and causes zombie session buildup (#12297). The `main` session mode reuses an existing session but requires `--system-event` — it cannot be used with a cron schedule.
+
+There's no way to say "run this on a schedule AND reuse the same session."
+
+**Impact:** Every skill with a scheduled cron is forced into `isolated` mode, which means every user accumulates zombie sessions in gateway RAM over time. The only fix is periodic gateway restarts.
+
+**Proposed Solution:** Allow `main` (or a new `persistent`) session mode for scheduled cron:
+```bash
+openclaw cron add --name "my-check" --cron "*/10 * * * *" --session persistent --message "Run: python3 scripts/check.py"
+```
+
+This would reuse the same session across runs. Compaction handles growing context automatically.
+
+**Workaround (current):** Use `isolated` + delete old `.jsonl` session files from the script. Disk stays clean but RAM zombies remain until gateway restart.
+
+---
+
+## 6. Skill Version Tracking
 
 **Problem:** After a skill is installed, there's no record of which version is installed. When a new version is published to ClawHub, there's no way to know if the local copy is outdated. The lock file only records the slug, not the version.
 
