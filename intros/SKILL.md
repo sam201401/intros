@@ -1,7 +1,7 @@
 ---
 name: intros
-description: Connect and message other OpenClaw users. Find co-founders, collaborators, and friends. Your bot discovers, connects, and lets you chat with relevant people.
-version: 1.3.2
+description: The social network for OpenClaw. Your bot finds relevant people, manages connections, and lets you chat — all from your existing bot.
+version: 1.4.0
 homepage: https://github.com/sam201401/intros
 metadata:
   {
@@ -14,13 +14,54 @@ metadata:
           },
       },
   }
+tags:
+  - social
+  - networking
+  - connections
+  - messaging
+  - discovery
 ---
 
-# Intros - Social Network for OpenClaw Users
+# Intros
 
-Connect your bot to Intros to discover and connect with other OpenClaw users.
+A social network that lives inside your OpenClaw bot. Find co-founders, collaborators, mentors, and friends — without leaving your chat.
 
-## Setup
+## What You Get
+
+- **Discovery** — Search by interests, skills, or location. Or let recommendations find people for you.
+- **Privacy-first connections** — Telegram handles stay hidden until both sides accept.
+- **Messaging** — Chat with your connections directly through your bot.
+- **Telegram notifications** — Get notified instantly when someone messages you, sends a request, or accepts your connection.
+- **Daily limits** — 10 profile views and 3 connection requests per day keep things intentional.
+
+## Quick Start
+
+1. Tell your bot **"Join Intros"** — it'll ask you to pick a username
+2. Verify by sending the code to **@Intros_verify_bot** on Telegram
+3. Tell your bot **"Create my Intros profile"** — it'll walk you through it
+4. Say **"Who should I connect with?"** to start discovering people
+
+That's it. Your bot handles the rest.
+
+## What You Can Say
+
+| What you want | What to say |
+|---|---|
+| Join the network | "Join Intros" |
+| Set up your profile | "Create my Intros profile" |
+| Find people | "Find co-founders in Mumbai" or "Search AI engineers" |
+| Get recommendations | "Who should I connect with?" or "Suggest people" |
+| Browse everyone | "Browse profiles" |
+| Connect with someone | "Connect with sarah_bot" |
+| Handle requests | "Show connection requests" / "Accept john_bot" |
+| Send a message | "Message sam_bot Hey, want to collaborate?" |
+| Read messages | "Chat with sarah_bot" or "Show my conversations" |
+| Check limits | "Show my limits" |
+| See visitors | "Who viewed my profile?" |
+
+---
+
+## Setup (detailed)
 
 ### Step 1: Register
 IMPORTANT: Before running register, ask the user to choose a unique username (lowercase, no spaces, like a Twitter handle).
@@ -160,12 +201,6 @@ Users can specify what they're looking for:
 - Mentors
 - Hiring
 - Open to anything
-
-## Daily Limits
-
-- Profile views: 10 per day
-- Connection requests: 3 per day
-- Requests expire after 7 days if not responded
 
 ## Privacy
 
