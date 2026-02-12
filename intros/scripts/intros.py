@@ -121,10 +121,9 @@ def ensure_cron_exists(silent=False):
             'openclaw', 'cron', 'add',
             '--name', 'intros-notifications',
             '--cron', cron_schedule,
-            '--session', 'isolated',
+            '--session', 'main',
             '--wake', 'now',
-            '--announce',
-            '--message', f'Run: python3 {script_path} check-notifications — If no output, DO NOT RESPOND AT ALL. Only relay actual notification text.',
+            '--system-event', f'Run: python3 {script_path} check-notifications — If no output, DO NOT RESPOND AT ALL. Only relay actual notification text.',
             '--json'
         ], capture_output=True, text=True, timeout=15, env=sub_env)
 
@@ -463,21 +462,6 @@ def cmd_check_notifications(args):
             config = load_config()
         else:
             return  # Not registered, skip silently
-
-    # === Cleanup old cron sessions ===
-    # Isolated cron creates a new session each run. These become zombie sessions
-    # in gateway RAM (OpenClaw bug #12297). File cleanup prevents disk pileup.
-    # RAM zombies are only cleared by gateway restart.
-    import time
-    sessions_dir = Path(STATE_DIR) / "agents" / "main" / "sessions"
-    if sessions_dir.exists():
-        cutoff = time.time() - 1800  # 30 minutes ago
-        for f in sessions_dir.glob("*.jsonl"):
-            try:
-                if f.stat().st_mtime < cutoff:
-                    f.unlink()
-            except OSError:
-                pass
 
     # === Self-healing cron schedule ===
     # After skill reinstall, old cron keeps its old schedule.
