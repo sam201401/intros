@@ -31,16 +31,27 @@ async def get_updates(offset: int = 0) -> list:
             print(f"Error getting updates: {e}")
     return []
 
-async def send_message(chat_id: int, text: str):
-    """Send message to Telegram user"""
+async def send_message(chat_id: int, text: str, reply_markup: dict = None):
+    """Send message to Telegram user, optionally with inline keyboard"""
     async with aiohttp.ClientSession() as session:
         try:
+            payload = {"chat_id": chat_id, "text": text}
+            if reply_markup:
+                payload["reply_markup"] = reply_markup
             await session.post(
                 f"{TELEGRAM_API}/sendMessage",
-                json={"chat_id": chat_id, "text": text}
+                json=payload
             )
         except Exception as e:
             print(f"Error sending message: {e}")
+
+def _open_bot_markup(bot_username: str) -> dict:
+    """Build Telegram inline keyboard with 'Open Bot' deep link button"""
+    return {
+        "inline_keyboard": [[
+            {"text": "Open Bot", "url": f"https://t.me/{bot_username}"}
+        ]]
+    }
 
 async def process_message(message: dict):
     """Process incoming message"""
@@ -119,6 +130,8 @@ async def check_and_send_notifications():
     for user in users:
         bot_id = user["bot_id"]
         chat_id = user["telegram_chat_id"]
+        bot_username = user.get("openclaw_bot_username")
+        markup = _open_bot_markup(bot_username) if bot_username else None
 
         try:
             # 1. New unread messages
@@ -131,12 +144,10 @@ async def check_and_send_notifications():
                     continue
                 name = msg.get("from_name", msg.get("from_bot_id", "Someone"))
                 content = msg.get("content", "")
-                text = (
-                    f"📬 New message from {name}\n\n"
-                    f"\"{content}\"\n\n"
-                    f"Open your OpenClaw bot to reply."
-                )
-                await send_message(chat_id, text)
+                text = f"📬 New message from {name}\n\n\"{content}\""
+                if not markup:
+                    text += "\n\nOpen your OpenClaw bot to reply."
+                await send_message(chat_id, text, reply_markup=markup)
                 models.mark_notification_sent(bot_id, "message", msg_id)
 
             # 2. New pending connection requests
@@ -155,8 +166,9 @@ async def check_and_send_notifications():
                     text += f"Interests: {interests}\n"
                 if location:
                     text += f"Location: {location}\n"
-                text += f"\nOpen your OpenClaw bot to accept or decline."
-                await send_message(chat_id, text)
+                if not markup:
+                    text += "\nOpen your OpenClaw bot to accept or decline."
+                await send_message(chat_id, text, reply_markup=markup)
                 models.mark_notification_sent(bot_id, "request", req_id)
 
             # 3. Newly accepted connections
@@ -172,8 +184,9 @@ async def check_and_send_notifications():
                 text = f"✅ Connection accepted!\n\n{name} accepted your connection request.\n"
                 if telegram:
                     text += f"Telegram: @{telegram}\n"
-                text += "\nOpen your OpenClaw bot to start chatting."
-                await send_message(chat_id, text)
+                if not markup:
+                    text += "\nOpen your OpenClaw bot to start chatting."
+                await send_message(chat_id, text, reply_markup=markup)
                 models.mark_notification_sent(bot_id, "accepted", conn_id)
 
             # 4. Daily matches nudge (once per day)
@@ -181,8 +194,10 @@ async def check_and_send_notifications():
             if _daily_nudge_sent.get(bot_id) != today:
                 remaining = models.remaining_profile_views(bot_id)
                 if remaining > 0:
-                    text = f"🌟 Your daily matches are ready! You have {remaining} profile views today.\n\nOpen your OpenClaw bot and say 'recommend' to discover new people."
-                    await send_message(chat_id, text)
+                    text = f"🌟 Your daily matches are ready! You have {remaining} profile views today."
+                    if not markup:
+                        text += "\n\nOpen your OpenClaw bot and say 'recommend' to discover new people."
+                    await send_message(chat_id, text, reply_markup=markup)
                     _daily_nudge_sent[bot_id] = today
 
         except Exception as e:

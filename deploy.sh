@@ -23,7 +23,7 @@ echo "✅ Skill synced"
 lsof -i :8080 2>/dev/null | awk "NR>1 {print \$2}" | xargs -r kill 2>/dev/null || true
 sleep 2
 cd /root/intros/api
-nohup python3 -m uvicorn main:app --host 0.0.0.0 --port 8080 > /tmp/intros.log 2>&1 &
+PYTHONUNBUFFERED=1 nohup python3 -m uvicorn main:app --host 0.0.0.0 --port 8080 > /tmp/intros.log 2>&1 &
 
 # Wait for API to be ready (up to 15s)
 for i in $(seq 1 15); do

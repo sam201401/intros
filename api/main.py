@@ -23,6 +23,7 @@ ADMIN_TELEGRAM_ID = "1196063372"
 class RegisterRequest(BaseModel):
     bot_id: str
     telegram_id: Optional[str] = None
+    openclaw_bot_username: Optional[str] = None
 
 class ProfileRequest(BaseModel):
     name: str
@@ -77,7 +78,7 @@ def get_verified_user(user: dict = Depends(get_current_user)):
 @app.post("/register")
 def register(req: RegisterRequest):
     """Register a new bot"""
-    result = models.create_user(req.bot_id, req.telegram_id)
+    result = models.create_user(req.bot_id, req.telegram_id, req.openclaw_bot_username)
     if result["success"]:
         return {
             "success": True,

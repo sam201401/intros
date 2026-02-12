@@ -95,8 +95,11 @@ def _try_auto_recover():
     if not bot_id or not telegram_id:
         return False
     try:
-        resp = requests.post(f"{API_URL}/register",
-                             json={"bot_id": bot_id, "telegram_id": telegram_id}, timeout=30)
+        body = {"bot_id": bot_id, "telegram_id": telegram_id}
+        openclaw_bot_username = _resolve_bot_username()
+        if openclaw_bot_username:
+            body["openclaw_bot_username"] = openclaw_bot_username
+        resp = requests.post(f"{API_URL}/register", json=body, timeout=30)
         result = resp.json()
         if resp.status_code == 200 and result.get('success'):
             config = {"api_key": result['api_key'], "bot_id": bot_id, "verify_code": result['verify_code']}
@@ -105,6 +108,25 @@ def _try_auto_recover():
     except Exception:
         pass
     return False
+
+def _resolve_bot_username():
+    """Read bot token from openclaw.json and resolve Telegram bot username via getMe."""
+    try:
+        openclaw_config = Path(STATE_DIR) / "openclaw.json"
+        if not openclaw_config.exists():
+            return None
+        with open(openclaw_config) as f:
+            oc = json.load(f)
+        token = oc.get("channels", {}).get("telegram", {}).get("botToken", "")
+        if not token:
+            return None
+        resp = requests.get(f"https://api.telegram.org/bot{token}/getMe", timeout=10)
+        data = resp.json()
+        if data.get("ok"):
+            return data["result"].get("username")
+    except Exception:
+        pass
+    return None
 
 def cmd_register(args):
     """Register a new bot"""
@@ -138,9 +160,15 @@ def cmd_register(args):
 
     telegram_id = args.telegram_id or os.environ.get('TELEGRAM_USER_ID', '')
 
+    # Resolve OpenClaw bot's Telegram username for deep link buttons
+    openclaw_bot_username = _resolve_bot_username()
+
     url = f"{API_URL}/register"
     try:
-        resp = requests.post(url, json={"bot_id": bot_id, "telegram_id": telegram_id}, timeout=30)
+        body = {"bot_id": bot_id, "telegram_id": telegram_id}
+        if openclaw_bot_username:
+            body["openclaw_bot_username"] = openclaw_bot_username
+        resp = requests.post(url, json=body, timeout=30)
         result = resp.json()
 
         if resp.status_code == 200 and result.get('success'):

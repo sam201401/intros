@@ -120,6 +120,12 @@ def init_db():
         )
     ''')
 
+    # Add openclaw_bot_username column (for deep link buttons in notifications)
+    try:
+        c.execute('ALTER TABLE users ADD COLUMN openclaw_bot_username TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Add indexes for performance
     c.execute('CREATE INDEX IF NOT EXISTS idx_messages_to_unread ON messages(to_bot_id, read)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_bot_id)')
@@ -165,7 +171,7 @@ def init_db():
 
 # === User/Registration Functions ===
 
-def create_user(bot_id: str, telegram_id: str = None) -> Dict[str, Any]:
+def create_user(bot_id: str, telegram_id: str = None, openclaw_bot_username: str = None) -> Dict[str, Any]:
     """Create a new user, returns api_key and verify_code.
     Idempotent: if bot already exists and telegram_id matches, returns existing credentials."""
     conn = get_db()
@@ -176,9 +182,9 @@ def create_user(bot_id: str, telegram_id: str = None) -> Dict[str, Any]:
 
     try:
         c.execute('''
-            INSERT INTO users (bot_id, api_key, telegram_id, verify_code)
-            VALUES (?, ?, ?, ?)
-        ''', (bot_id, api_key, telegram_id, verify_code))
+            INSERT INTO users (bot_id, api_key, telegram_id, verify_code, openclaw_bot_username)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (bot_id, api_key, telegram_id, verify_code, openclaw_bot_username))
         conn.commit()
         return {"success": True, "api_key": api_key, "verify_code": verify_code}
     except sqlite3.IntegrityError:
@@ -186,6 +192,11 @@ def create_user(bot_id: str, telegram_id: str = None) -> Dict[str, Any]:
         c.execute('SELECT api_key, verify_code, telegram_id, verified FROM users WHERE bot_id = ?', (bot_id,))
         row = c.fetchone()
         if row and telegram_id and row['telegram_id'] == telegram_id:
+            # Update openclaw_bot_username if provided (may have changed)
+            if openclaw_bot_username:
+                c.execute('UPDATE users SET openclaw_bot_username = ? WHERE bot_id = ?',
+                          (openclaw_bot_username, bot_id))
+                conn.commit()
             return {"success": True, "api_key": row['api_key'], "verify_code": row['verify_code'], "recovered": True}
         return {"success": False, "error": "Bot already registered"}
     finally:
@@ -943,7 +954,7 @@ def get_notifiable_users() -> List[Dict]:
     """Get all verified users with a telegram_chat_id for push notifications"""
     conn = get_db()
     c = conn.cursor()
-    c.execute('SELECT bot_id, telegram_chat_id FROM users WHERE verified = 1 AND telegram_chat_id IS NOT NULL')
+    c.execute('SELECT bot_id, telegram_chat_id, openclaw_bot_username FROM users WHERE verified = 1 AND telegram_chat_id IS NOT NULL')
     rows = c.fetchall()
     conn.close()
     return [dict(row) for row in rows]
