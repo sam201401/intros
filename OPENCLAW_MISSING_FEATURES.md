@@ -22,25 +22,23 @@ post-install: "python3 scripts/setup.py"
 
 ---
 
-## 2. Isolated Session Cleanup (Zombie Sessions)
+## 2. ~~Isolated Session Cleanup (Zombie Sessions)~~ — FIXED in v2026.2.9
 
-**Problem:** Cron jobs running in `isolated` mode create a new session each run. These sessions persist as **zombies** in the gateway's memory — they finish execution but never properly terminate. The `.jsonl` files also pile up on disk. Over hours/days, this causes the gateway to use excessive memory (595MB+ observed on a 2GB VPS with 367 session files).
+**Problem:** Cron jobs running in `isolated` mode create a new session each run. These sessions persisted as **zombies** in the gateway's memory — they finished execution but never properly terminated. The `.jsonl` files also piled up on disk. Over hours/days, this caused the gateway to use excessive memory (595MB+ observed on a 2GB VPS with 367 session files).
 
-**Root Cause:** The gateway holds active session state in memory. Isolated cron sessions don't get cleaned up after completion, so they stay resident consuming tokens. A race condition ([#12158](https://github.com/openclaw/openclaw/issues/12158)) also causes cron sessions to fall back to 200k default context window instead of the configured limit.
+**Root Cause:** The gateway held active session state in memory. Isolated cron sessions didn't get cleaned up after completion, so they stayed resident consuming tokens. A race condition ([#12158](https://github.com/openclaw/openclaw/issues/12158)) also caused cron sessions to fall back to 200k default context window instead of the configured limit.
 
-**Impact:** Gateway becomes slow and unresponsive. CLI commands like `openclaw cron list` start timing out. The bot becomes noticeably laggy for the user.
+**Fix:** [PR #13083](https://github.com/openclaw/openclaw/pull/13083) (merged Feb 10, 2026, included in v2026.2.9) adds automatic pruning:
+- **Cron session TTL reaper**: Ephemeral cron sessions matching `cron:<jobId>:run:<uuid>` are auto-pruned after 24 hours
+- **Session store maintenance**: `sessions.json` is pruned, capped, and rotated to prevent unbounded growth
+- Sweeps run at most every 5 minutes (self-throttled)
+
+**Action required:** Update to OpenClaw v2026.2.9+ (`openclaw update`). No manual cleanup needed.
 
 **Related GitHub Issues:**
-- [#12297](https://github.com/openclaw/openclaw/issues/12297) — Feature request for `sessions_kill` and `sessions_cleanup` tools (23+ zombie cron sessions, ~250k wasted tokens)
+- [#12297](https://github.com/openclaw/openclaw/issues/12297) — Feature request for `sessions_kill` and `sessions_cleanup` agent tools (still open — agent-facing tools not yet available)
 - [#11665](https://github.com/openclaw/openclaw/issues/11665) — 319 orphaned session files accumulated in 2 days from webhook sessions
-- [#12158](https://github.com/openclaw/openclaw/issues/12158) — `lookupContextTokens()` race condition causes cron sessions to use 200k default context
-
-**Proposed Solution:**
-- Auto-terminate isolated cron sessions after the run completes (clear from memory + delete file)
-- Or add `sessions_kill` / `sessions_cleanup` tools as proposed in #12297
-- Or add a `sessionRetention` option per cron job (e.g., `--retain none`)
-
-**Workaround (current):** Skill script deletes `.jsonl` files older than 30 minutes at the start of each cron run. This helps with disk but doesn't clear zombie sessions from gateway memory — only a gateway restart does that.
+- [#12158](https://github.com/openclaw/openclaw/issues/12158) — `lookupContextTokens()` race condition (PRs #12195, #12270 open)
 
 ---
 
@@ -84,20 +82,20 @@ The `--exec` flag would run the command directly and pipe stdout to the announce
 
 ## 5. Persistent Session Mode for Scheduled Cron
 
-**Problem:** Scheduled cron jobs can only use `isolated` session mode, which creates a new session every run and causes zombie session buildup (#12297). The `main` session mode reuses an existing session but requires `--system-event` — it cannot be used with a cron schedule.
+**Problem:** Scheduled cron jobs can only use `isolated` session mode. The `main` session mode reuses an existing session but requires `--system-event` and **skips when the session is busy or idle** — making it unreliable for background polling.
 
-There's no way to say "run this on a schedule AND reuse the same session."
+There's no way to say "run this on a schedule AND reuse the same session reliably."
 
-**Impact:** Every skill with a scheduled cron is forced into `isolated` mode, which means every user accumulates zombie sessions in gateway RAM over time. The only fix is periodic gateway restarts.
+**Impact:** Each skill is forced into `isolated` mode for reliable execution. While zombie cleanup is now handled by v2026.2.9 (see #2), each cron run still launches a full AI agent session — wasteful for simple script execution.
 
-**Proposed Solution:** Allow `main` (or a new `persistent`) session mode for scheduled cron:
+**Proposed Solution:** Allow a `persistent` session mode for scheduled cron that reuses the same dedicated session (not the main conversation session):
 ```bash
 openclaw cron add --name "my-check" --cron "*/10 * * * *" --session persistent --message "Run: python3 scripts/check.py"
 ```
 
-This would reuse the same session across runs. Compaction handles growing context automatically.
+This would avoid creating new sessions while not interfering with user conversations.
 
-**Workaround (current):** Use `isolated` + delete old `.jsonl` session files from the script. Disk stays clean but RAM zombies remain until gateway restart.
+**Note:** The zombie session problem from `isolated` mode is largely mitigated by v2026.2.9's auto-pruning (24h TTL). This is now a nice-to-have optimization rather than a critical issue.
 
 ---
 
