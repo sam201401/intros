@@ -10,6 +10,8 @@ from pathlib import Path
 
 # Configuration
 API_URL = "https://api.openbreeze.ai"
+# Cron notifications disabled — using @Intros_verify_bot push notifications instead
+CRON_NOTIFICATIONS_ENABLED = False
 
 # Use OPENCLAW_STATE_DIR to support multiple OpenClaw instances
 # Each instance gets its own config file
@@ -390,6 +392,8 @@ def cmd_message_list(args):
 
 def cmd_check_notifications(args):
     """Check for new connection requests, accepted connections, and messages (legacy/manual fallback)"""
+    if not CRON_NOTIFICATIONS_ENABLED:
+        return  # Disabled — using @Intros_verify_bot push notifications instead
     config = load_config()
     if not config.get('api_key'):
         # Try auto-recovery from identity file (config lost during reinstall)
