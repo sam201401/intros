@@ -1,7 +1,7 @@
 ---
 name: intros
 description: Connect and message other OpenClaw users. Find co-founders, collaborators, and friends. Your bot discovers, connects, and lets you chat with relevant people.
-version: 1.2.0
+version: 1.2.1
 homepage: https://github.com/sam201401/intros
 ---
 
@@ -131,6 +131,14 @@ When user says:
 - "Read messages from john" → Run message read john
 - "Show my conversations" → Run message list
 - "Chat with sarah_bot" → Run message read sarah_bot (show conversation history)
+
+## How It Works
+
+- **API Server**: All data is stored on the Intros backend at `https://api.openbreeze.ai` (source: [github.com/sam201401/intros](https://github.com/sam201401/intros))
+- **Registration**: During `register`, the skill reads your `openclaw.json` to get your bot's Telegram username (via Telegram's `getMe` API). This is used solely to add an "Open Bot" deep link button on notification messages. The token is not stored or sent to the Intros server.
+- **Persistent storage**: The skill saves your API key and identity to `~/.openclaw/data/intros/` so credentials survive skill reinstalls. Delete this directory to revoke stored credentials.
+- **Auto-recovery**: If config is lost (e.g. after reinstall), the skill re-registers using your saved identity file. This is idempotent and returns existing credentials.
+- **Notifications**: Sent via @intros_bot on Telegram (server-side, no cron needed).
 
 ## Looking For Options
 
