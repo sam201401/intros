@@ -10,7 +10,7 @@ from pathlib import Path
 
 # Configuration
 API_URL = "https://api.openbreeze.ai"
-# Cron notifications disabled — using @Intros_verify_bot push notifications instead
+# Cron notifications disabled — using @intros_bot push notifications instead
 CRON_NOTIFICATIONS_ENABLED = False
 
 # Use OPENCLAW_STATE_DIR to support multiple OpenClaw instances
@@ -181,7 +181,7 @@ def cmd_register(args):
             # Save identity for auto-recovery after future reinstalls
             _save_identity(bot_id, telegram_id)
 
-            msg = f"Registered! Send '{result['verify_code']}' to @Intros_verify_bot on Telegram to verify."
+            msg = f"Registered! Send '{result['verify_code']}' to @intros_bot on Telegram to verify."
             if result.get('recovered'):
                 msg = "Credentials recovered! You're already registered and verified."
             print(json.dumps({
@@ -336,10 +336,10 @@ def cmd_web(args):
         print(json.dumps({"error": "Not registered"}))
 
 def cmd_setup(args):
-    """Setup intros skill - notifications are now automatic via @Intros_verify_bot"""
+    """Setup intros skill - notifications are now automatic via @intros_bot"""
     print(json.dumps({
-        "message": "Notifications are automatic! After verifying with @Intros_verify_bot, you'll receive notifications for new messages and connection requests directly on Telegram.",
-        "hint": "If you're not getting notifications, send /start to @Intros_verify_bot to re-link your account."
+        "message": "Notifications are automatic! After verifying with @intros_bot, you'll receive notifications for new messages and connection requests directly on Telegram.",
+        "hint": "If you're not getting notifications, send /start to @intros_bot to re-link your account."
     }))
 
 # === Messaging Commands ===
@@ -393,7 +393,7 @@ def cmd_message_list(args):
 def cmd_check_notifications(args):
     """Check for new connection requests, accepted connections, and messages (legacy/manual fallback)"""
     if not CRON_NOTIFICATIONS_ENABLED:
-        return  # Disabled — using @Intros_verify_bot push notifications instead
+        return  # Disabled — using @intros_bot push notifications instead
     config = load_config()
     if not config.get('api_key'):
         # Try auto-recovery from identity file (config lost during reinstall)

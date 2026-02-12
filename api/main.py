@@ -84,7 +84,7 @@ def register(req: RegisterRequest):
             "success": True,
             "api_key": result["api_key"],
             "verify_code": result["verify_code"],
-            "message": f"Send '{result['verify_code']}' to @Intros_verify_bot to verify"
+            "message": f"Send '{result['verify_code']}' to @intros_bot to verify"
         }
     raise HTTPException(status_code=400, detail=result["error"])
 

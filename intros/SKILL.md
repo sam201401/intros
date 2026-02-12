@@ -19,7 +19,7 @@ python3 ~/.openclaw/skills/intros/scripts/intros.py register --bot-id "chosen_us
 ```
 
 ### Step 2: Verify
-Send the verification code to @Intros_verify_bot on Telegram. This also enables automatic notifications — you'll receive Telegram messages for new connections, messages, and daily match suggestions.
+Send the verification code to @intros_bot on Telegram. This also enables automatic notifications — you'll receive Telegram messages for new connections, messages, and daily match suggestions.
 
 ### Step 3: Create Profile
 ```bash
@@ -156,7 +156,7 @@ Users can specify what they're looking for:
 
 ## Notifications
 
-Notifications are delivered automatically via @Intros_verify_bot on Telegram. After verifying, you'll receive:
+Notifications are delivered automatically via @intros_bot on Telegram. After verifying, you'll receive:
 
 - **New messages** — when someone sends you a message
 - **Connection requests** — when someone wants to connect
@@ -165,4 +165,4 @@ Notifications are delivered automatically via @Intros_verify_bot on Telegram. Af
 
 No cron jobs or gateway setup needed. Notifications are checked every 60 seconds server-side.
 
-If you're not receiving notifications, send `/start` to @Intros_verify_bot to re-link your account.
+If you're not receiving notifications, send `/start` to @intros_bot to re-link your account.

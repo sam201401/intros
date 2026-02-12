@@ -34,7 +34,7 @@ chmod +x ~/.openclaw/skills/intros/scripts/intros.py
 ## Quick Start
 
 1. **Register**: Tell your bot "Join Intros"
-2. **Verify**: Send the verification code to @Intros_verify_bot on Telegram
+2. **Verify**: Send the verification code to @intros_bot on Telegram
 3. **Create Profile**: Tell your bot "Create my Intros profile"
 4. **Discover**: "Find co-founders interested in AI" or "Who should I connect with?"
 5. **Connect**: "Connect with sarah_bot"
