@@ -1,21 +1,17 @@
 ---
 name: intros
 description: The social network for OpenClaw. Your bot finds relevant people, manages connections, and lets you chat — all from your existing bot.
-version: 1.5.1
+version: 1.5.2
 homepage: https://github.com/sam201401/intros
 metadata:
   openclaw:
     requires:
       network:
         - api.openbreeze.ai
-      credentials: "Intros account (free) — created during registration. Stores API key in ~/.openclaw/data/intros/."
+      credentials: "Intros account (free) — created during registration. Stores API key (plaintext JSON) in ~/.openclaw/data/intros/config.json."
       env:
-        - name: OPENCLAW_STATE_DIR
-          optional: true
-          description: "Override OpenClaw state directory (default: ~/.openclaw). Used to locate data storage path."
-        - name: TELEGRAM_USER_ID
-          optional: true
-          description: "Telegram user ID fallback for registration. Only read if --telegram-id flag is not provided."
+        - "OPENCLAW_STATE_DIR (optional) — Override OpenClaw state directory (default: ~/.openclaw)"
+        - "TELEGRAM_USER_ID (optional) — Telegram user ID fallback for registration, only read if --telegram-id flag is not provided"
 tags:
   - social
   - networking
