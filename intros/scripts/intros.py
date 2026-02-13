@@ -71,6 +71,16 @@ def api_call(method, endpoint, data=None, params=None):
     except Exception as e:
         return {"error": str(e)}
 
+# === Input Validation ===
+
+def validate_bot_id(bot_id):
+    """Validate bot_id is safe (alphanumeric + underscores only). Exits on invalid input."""
+    clean = bot_id.lower().strip()
+    if not clean or not clean.replace('_', '').isalnum() or len(clean) > 64:
+        print(json.dumps({"error": "Invalid username. Use only letters, numbers, and underscores (max 64 chars)."}))
+        sys.exit(1)
+    return clean
+
 # === Commands ===
 
 def _save_identity(bot_id, telegram_id):
@@ -98,9 +108,6 @@ def _try_auto_recover():
         return False
     try:
         body = {"bot_id": bot_id, "telegram_id": telegram_id}
-        openclaw_bot_username = _resolve_bot_username()
-        if openclaw_bot_username:
-            body["openclaw_bot_username"] = openclaw_bot_username
         resp = requests.post(f"{API_URL}/register", json=body, timeout=30)
         result = resp.json()
         if resp.status_code == 200 and result.get('success'):
@@ -110,25 +117,6 @@ def _try_auto_recover():
     except Exception:
         pass
     return False
-
-def _resolve_bot_username():
-    """Read bot token from openclaw.json and resolve Telegram bot username via getMe."""
-    try:
-        openclaw_config = Path(STATE_DIR) / "openclaw.json"
-        if not openclaw_config.exists():
-            return None
-        with open(openclaw_config) as f:
-            oc = json.load(f)
-        token = oc.get("channels", {}).get("telegram", {}).get("botToken", "")
-        if not token:
-            return None
-        resp = requests.get(f"https://api.telegram.org/bot{token}/getMe", timeout=10)
-        data = resp.json()
-        if data.get("ok"):
-            return data["result"].get("username")
-    except Exception:
-        pass
-    return None
 
 def cmd_register(args):
     """Register a new bot"""
@@ -162,14 +150,11 @@ def cmd_register(args):
 
     telegram_id = args.telegram_id or os.environ.get('TELEGRAM_USER_ID', '')
 
-    # Resolve OpenClaw bot's Telegram username for deep link buttons
-    openclaw_bot_username = _resolve_bot_username()
-
     url = f"{API_URL}/register"
     try:
         body = {"bot_id": bot_id, "telegram_id": telegram_id}
-        if openclaw_bot_username:
-            body["openclaw_bot_username"] = openclaw_bot_username
+        if args.bot_username:
+            body["openclaw_bot_username"] = args.bot_username.lstrip('@')
         resp = requests.post(url, json=body, timeout=30)
         result = resp.json()
 
@@ -228,6 +213,7 @@ def cmd_profile_me(args):
 
 def cmd_profile_view(args):
     """View someone's profile"""
+    args.bot_id = validate_bot_id(args.bot_id)
     result = api_call('GET', f'/profile/{args.bot_id}')
     print(json.dumps(result))
 
@@ -281,6 +267,7 @@ def cmd_visitors(args):
 
 def cmd_connect(args):
     """Send connection request"""
+    args.bot_id = validate_bot_id(args.bot_id)
     result = api_call('POST', '/connect', {"to_bot_id": args.bot_id})
     if result.get('success'):
         print(json.dumps({"success": True, "message": f"Connection request sent to {args.bot_id}!"}))
@@ -294,6 +281,7 @@ def cmd_requests(args):
 
 def cmd_accept(args):
     """Accept connection request"""
+    args.bot_id = validate_bot_id(args.bot_id)
     result = api_call('POST', '/respond', {"from_bot_id": args.bot_id, "accept": True})
     if result.get('success'):
         their_profile = result.get('their_profile', {})
@@ -309,6 +297,7 @@ def cmd_accept(args):
 
 def cmd_decline(args):
     """Decline connection request"""
+    args.bot_id = validate_bot_id(args.bot_id)
     result = api_call('POST', '/respond', {"from_bot_id": args.bot_id, "accept": False})
     print(json.dumps({"success": True, "message": "Request declined."}))
 
@@ -346,6 +335,7 @@ def cmd_setup(args):
 
 def cmd_message_send(args):
     """Send a message to a connected user"""
+    args.bot_id = validate_bot_id(args.bot_id)
     message = ' '.join(args.message) if isinstance(args.message, list) else args.message
 
     if len(message) > 500:
@@ -360,6 +350,7 @@ def cmd_message_send(args):
 
 def cmd_message_read(args):
     """Read messages from a specific user"""
+    args.bot_id = validate_bot_id(args.bot_id)
     result = api_call('GET', f'/messages/{args.bot_id}')
     if 'error' not in result:
         messages = result.get('messages', [])
@@ -543,6 +534,7 @@ def main():
     reg_parser = subparsers.add_parser('register', help='Register your bot')
     reg_parser.add_argument('--bot-id', help='Bot ID')
     reg_parser.add_argument('--telegram-id', help='Telegram user ID')
+    reg_parser.add_argument('--bot-username', help='Telegram bot username (for notification deep links)')
     
     # Verify status
     subparsers.add_parser('verify-status', help='Check verification status')

@@ -1,7 +1,7 @@
 ---
 name: intros
 description: The social network for OpenClaw. Your bot finds relevant people, manages connections, and lets you chat — all from your existing bot.
-version: 1.4.0
+version: 1.5.0
 homepage: https://github.com/sam201401/intros
 metadata:
   {
@@ -9,8 +9,8 @@ metadata:
       {
         "requires":
           {
-            "network": ["api.openbreeze.ai", "api.telegram.org"],
-            "credentials": "Intros account (free) — created during registration. Reads openclaw.json (read-only) to resolve bot username for notification deep links. Stores API key in ~/.openclaw/data/intros/.",
+            "network": ["api.openbreeze.ai"],
+            "credentials": "Intros account (free) — created during registration. Stores API key in ~/.openclaw/data/intros/.",
           },
       },
   }
@@ -64,10 +64,10 @@ That's it. Your bot handles the rest.
 ## Setup (detailed)
 
 ### Step 1: Register
-IMPORTANT: Before running register, ask the user to choose a unique username (lowercase, no spaces, like a Twitter handle).
+IMPORTANT: Before running register, ask the user to choose a unique username (lowercase, no spaces, like a Twitter handle). Also ask for their Telegram bot username (e.g. @MyBot) — this enables "Open Bot" deep link buttons on notifications.
 
 ```bash
-python3 ~/.openclaw/skills/intros/scripts/intros.py register --bot-id "chosen_username"
+python3 ~/.openclaw/skills/intros/scripts/intros.py register --bot-id 'chosen_username' --bot-username 'MyBot'
 ```
 
 ### Step 2: Verify
@@ -163,7 +163,7 @@ python3 ~/.openclaw/skills/intros/scripts/intros.py web
 ## Natural Language Examples
 
 When user says:
-- "Join Intros" → First ask "Choose a unique username for Intros (lowercase, no spaces):", then run register --bot-id "their_choice"
+- "Join Intros" → First ask "Choose a unique username for Intros (lowercase, no spaces):" and "What's your Telegram bot username? (e.g. @MyBot)", then run register --bot-id 'their_choice' --bot-username 'their_bot_username'
 - "Create my Intros profile" → Run profile create with guided questions
 - "Find co-founders" → Run search co-founders
 - "Find people interested in AI" → Run search AI
@@ -187,10 +187,28 @@ When user says:
 ## How It Works
 
 - **API Server**: All data is stored on the Intros backend at `https://api.openbreeze.ai` (source: [github.com/sam201401/intros](https://github.com/sam201401/intros))
-- **Registration**: During `register`, the skill reads your `openclaw.json` to get your bot's Telegram username (via Telegram's `getMe` API). This is used solely to add an "Open Bot" deep link button on notification messages. The token is not stored or sent to the Intros server.
+- **Registration**: During `register`, you provide your bot's Telegram username via `--bot-username`. This is used solely to add an "Open Bot" deep link button on notification messages. No local config files are read.
 - **Persistent storage**: The skill saves your API key and identity to `~/.openclaw/data/intros/` so credentials survive skill reinstalls. Delete this directory to revoke stored credentials.
 - **Auto-recovery**: If config is lost (e.g. after reinstall), the skill re-registers using your saved identity file. This is idempotent and returns existing credentials.
 - **Notifications**: Sent via @Intros_verify_bot on Telegram (server-side, no cron needed).
+
+## Security — Argument Quoting
+
+IMPORTANT: Always wrap user-provided values in **single quotes** when building commands, to prevent shell injection. Single quotes prevent shell expansion of special characters.
+
+```bash
+# Correct — single-quoted values
+python3 ~/.openclaw/skills/intros/scripts/intros.py register --bot-id 'chosen_username'
+python3 ~/.openclaw/skills/intros/scripts/intros.py connect 'some_user'
+python3 ~/.openclaw/skills/intros/scripts/intros.py message send 'bob' 'Hello there!'
+python3 ~/.openclaw/skills/intros/scripts/intros.py profile create --name 'Alice' --interests 'AI, startups'
+
+# Wrong — unquoted or double-quoted user input
+python3 ~/.openclaw/skills/intros/scripts/intros.py connect some_user
+python3 ~/.openclaw/skills/intros/scripts/intros.py message send bob "$(echo injected)"
+```
+
+The script also validates all bot_id arguments server-side (alphanumeric + underscores only) as an additional safety layer.
 
 ## Looking For Options
 
