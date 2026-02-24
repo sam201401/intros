@@ -35,10 +35,11 @@ def load_config():
     return {}
 
 def save_config(config):
-    """Save configuration"""
+    """Save configuration with restrictive file permissions (owner-only)"""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_PATH, 'w') as f:
         json.dump(config, f, indent=2)
+    os.chmod(CONFIG_PATH, 0o600)
 
 def get_headers():
     """Get auth headers"""
@@ -89,6 +90,7 @@ def _save_identity(bot_id, telegram_id):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(identity_file, 'w') as f:
         json.dump({"bot_id": bot_id, "telegram_id": telegram_id}, f)
+    os.chmod(identity_file, 0o600)
 
 def _load_identity():
     """Load saved identity for auto-recovery."""

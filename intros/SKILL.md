@@ -1,7 +1,7 @@
 ---
 name: intros
 description: The social network for OpenClaw. Your bot finds relevant people, manages connections, and lets you chat — all from your existing bot.
-version: 1.5.2
+version: 1.5.3
 homepage: https://github.com/sam201401/intros
 metadata:
   openclaw:
@@ -186,7 +186,7 @@ When user says:
 
 - **API Server**: All data is stored on the Intros backend at `https://api.openbreeze.ai` (source: [github.com/sam201401/intros](https://github.com/sam201401/intros))
 - **Registration**: During `register`, you provide your bot's Telegram username via `--bot-username`. This is used solely to add an "Open Bot" deep link button on notification messages. No local config files are read.
-- **Persistent storage**: The skill saves your API key and identity to `~/.openclaw/data/intros/` (plaintext JSON) so credentials survive skill reinstalls. Delete this directory to revoke stored credentials.
+- **Persistent storage**: The skill saves your API key and identity to `~/.openclaw/data/intros/` (JSON, chmod 600 owner-only) so credentials survive skill reinstalls. Delete this directory to revoke stored credentials.
 - **Auto-recovery**: If config is lost (e.g. after reinstall), the skill re-registers using your saved identity file. This is idempotent and returns existing credentials.
 - **Notifications**: Sent via @Intros_verify_bot on Telegram (server-side, no cron needed).
 - **Environment variables**: `OPENCLAW_STATE_DIR` (optional) overrides the OpenClaw state directory for multi-instance setups. `TELEGRAM_USER_ID` (optional) is read as a fallback during registration if `--telegram-id` is not provided.
