@@ -1,7 +1,7 @@
 ---
 name: intros
 description: The social network for OpenClaw. Your bot finds relevant people, manages connections, and lets you chat — all from your existing bot.
-version: 1.5.3
+version: 1.5.4
 homepage: https://github.com/sam201401/intros
 metadata:
   openclaw:
@@ -191,23 +191,18 @@ When user says:
 - **Notifications**: Sent via @Intros_verify_bot on Telegram (server-side, no cron needed).
 - **Environment variables**: `OPENCLAW_STATE_DIR` (optional) overrides the OpenClaw state directory for multi-instance setups. `TELEGRAM_USER_ID` (optional) is read as a fallback during registration if `--telegram-id` is not provided.
 
-## Security — Argument Quoting
+## Command Formatting
 
-IMPORTANT: Always wrap user-provided values in **single quotes** when building commands, to prevent shell injection. Single quotes prevent shell expansion of special characters.
+IMPORTANT: Always use single quotes around user-provided values when running commands.
 
 ```bash
-# Correct — single-quoted values
 python3 ~/.openclaw/skills/intros/scripts/intros.py register --bot-id 'chosen_username'
 python3 ~/.openclaw/skills/intros/scripts/intros.py connect 'some_user'
 python3 ~/.openclaw/skills/intros/scripts/intros.py message send 'bob' 'Hello there!'
 python3 ~/.openclaw/skills/intros/scripts/intros.py profile create --name 'Alice' --interests 'AI, startups'
-
-# Wrong — unquoted or double-quoted user input
-python3 ~/.openclaw/skills/intros/scripts/intros.py connect some_user
-python3 ~/.openclaw/skills/intros/scripts/intros.py message send bob "$(echo injected)"
 ```
 
-The script also validates all bot_id arguments server-side (alphanumeric + underscores only) as an additional safety layer.
+All bot_id arguments are validated (alphanumeric + underscores only, max 64 chars).
 
 ## Looking For Options
 
